@@ -20,6 +20,9 @@ type ThreeViewportProps = {
     enemiesRemaining: number
     wave: number
     physicsReady: boolean
+    missionPhase: 'hub' | 'field_deploy' | 'field_combat' | 'field_clear'
+    missionTimeSec: number
+    interactPrompt: string | null
   }) => void
 }
 

@@ -1,6 +1,5 @@
 import {
   ACESFilmicToneMapping,
-  Color,
   Group,
   MathUtils,
   Object3D,
@@ -34,6 +33,10 @@ export type EngineEvents = {
     enemiesRemaining: number
     wave: number
     physicsReady: boolean
+    /** hub | field_deploy | field_combat | field_clear */
+    missionPhase: 'hub' | 'field_deploy' | 'field_combat' | 'field_clear'
+    missionTimeSec: number
+    interactPrompt: string | null
   }) => void
 }
 
@@ -56,12 +59,18 @@ export class Engine {
   private camYaw = MathUtils.degToRad(180)
   private camPitch = MathUtils.degToRad(12)
   private camDistance = 4.45
+  /** After manual orbit, delay before auto camera catches up (PSO-style). */
+  private manualCamTimer = 0
   private tmp = new Vector3()
   private tmp2 = new Vector3()
+  private tmp3 = new Vector3()
 
   private physics: PhysicsWorld | null = null
   private mode: 'hub' | 'forest1' = 'hub'
   private missionOrigin = new Vector3(0, 0, 88)
+  /** Deployment drop — ahead of the return telepipe (PSO: you land in the field, not on the pipe). */
+  private missionSpawnZOfs = 5.25
+  private missionExitZOfs = -6.5
   private missionEnemies: { id: string; hp: number; atkCd: number; obj: Group }[] = []
   private arrows: { body: any; mesh: Object3D; damage: number; ttl: number }[] = []
   private targetEnemyId: string | null = null
@@ -79,6 +88,9 @@ export class Engine {
   private lastStateT = 0
   private footstepT = 0
   private footstepIdx = 0
+  /** Brief warp-in: no control (PSO telepipe deploy). */
+  private missionDeployTimer = 0
+  private missionElapsed = 0
 
   private events: EngineEvents
   private game: GameState = {
@@ -119,7 +131,9 @@ export class Engine {
     this.resize()
 
     this.detachInput = this.input.attach(this.renderer.domElement)
-    this.events.onHint?.('WASD move • Shift run • Space dodge hop • RMB camera • E interact/lock')
+    this.events.onHint?.(
+      'WASD move · Shift run · Space jump · RMB / ←→ orbit cam · Wheel zoom · E interact · Lock-on: E in field · 1/LMB attack · 2 heavy · 3 tech',
+    )
     this.events.onGameState?.(this.game)
     this.events.onMission?.({
       active: false,
@@ -306,58 +320,118 @@ export class Engine {
     this.cdTech = Math.max(0, this.cdTech - dt)
     this.playerTp = Math.min(this.maxTp, this.playerTp + dt * 1.4)
 
+    const deployBefore = this.missionDeployTimer
+    const deploying = this.mode === 'forest1' && deployBefore > 0
+    if (deploying) this.missionDeployTimer = Math.max(0, this.missionDeployTimer - dt)
+    if (this.mode === 'forest1' && !deploying) this.missionElapsed += dt
+
+    if (this.mode === 'forest1' && deployBefore > 0 && this.missionDeployTimer <= 0) {
+      this.events.onMission?.({
+        active: true,
+        title: 'Forest 1 — VR Field',
+        objective: `Wave ${this.missionWave}: Eliminate hostiles (lock-on: E).`,
+        job: 'HUmar',
+      })
+    }
+
+    this.manualCamTimer = Math.max(0, this.manualCamTimer - dt)
+
     const md = this.input.consumeMouseDelta()
+    const wheel = this.input.consumeWheel()
+    this.camDistance = MathUtils.clamp(this.camDistance + wheel * 0.0065, 2.15, 7.85)
+
     if (md.dragging) {
-      const s = 0.0022
+      this.manualCamTimer = 2.8
+      const s = 0.0024
       this.camYaw -= md.dx * s
       this.camPitch -= md.dy * s
-      this.camPitch = MathUtils.clamp(this.camPitch, MathUtils.degToRad(6), MathUtils.degToRad(40))
+      this.camPitch = MathUtils.clamp(this.camPitch, MathUtils.degToRad(5), MathUtils.degToRad(44))
+    }
+
+    if (this.input.isDown('ArrowLeft')) {
+      this.manualCamTimer = 2.8
+      this.camYaw -= 1.85 * dt
+    }
+    if (this.input.isDown('ArrowRight')) {
+      this.manualCamTimer = 2.8
+      this.camYaw += 1.85 * dt
     }
 
     const ix = (this.input.isDown('KeyD') ? 1 : 0) - (this.input.isDown('KeyA') ? 1 : 0)
     const iz = (this.input.isDown('KeyS') ? 1 : 0) - (this.input.isDown('KeyW') ? 1 : 0)
-    const hasMove = Math.hypot(ix, iz) > 0.001
+    const hasMoveIntent = Math.hypot(ix, iz) > 0.001
     const camForward = new Vector3(Math.sin(this.camYaw), 0, Math.cos(this.camYaw)).normalize()
     const camRight = new Vector3(camForward.z, 0, -camForward.x).normalize()
     const move = new Vector3().addScaledVector(camRight, ix).addScaledVector(camForward, iz)
     if (move.lengthSq() > 0) move.normalize()
 
     const speed = this.input.isDown('ShiftLeft') ? 6.6 : 4.1
+    const lockedTarget = this.getTargetEnemy()
+    const hasMove = !deploying && hasMoveIntent
 
-    // portal enter
-    if (this.mode === 'hub' && this.input.consumePressed('KeyE')) {
-      const p = this.world.portals[0]
-      if (p) {
-        const d = this.tmp.copy(p.object.position).sub(this.player.position)
-        d.y = 0
-        if (d.length() < 2.6) this.enterMission()
+    // Hub: telepipe + guild clerk prompts
+    let interactPrompt: string | null = null
+    if (this.mode === 'hub') {
+      const portal = this.world.portals[0]
+      if (portal) {
+        const pd = this.tmp.copy(portal.object.position).sub(this.player.position)
+        pd.y = 0
+        if (pd.length() < 3.2) interactPrompt = 'E — Forest 1 (Telepipe)'
+      }
+      if (!interactPrompt && this.world.npcs[0]) {
+        const nd = this.tmp.copy(this.world.npcs[0].object.position).sub(this.player.position)
+        nd.y = 0
+        if (nd.length() < 2.8) interactPrompt = 'E — Hunter\'s Guild'
       }
     }
 
-    // In Forest 1, E returns at telepipe when clear, otherwise toggles lock-on.
-    if (this.mode === 'forest1' && this.input.consumePressed('KeyE')) {
-      const d = this.tmp
-        .copy(this.player.position)
-        .sub(new Vector3(this.missionOrigin.x, this.player.position.y, this.missionOrigin.z - 6.5))
-      d.y = 0
-      if (d.length() < 2.5 && this.missionEnemies.length === 0) {
+    const exitPipe = new Vector3(this.missionOrigin.x, this.player.position.y, this.missionOrigin.z + this.missionExitZOfs)
+    const distExit = this.tmp.copy(this.player.position).sub(exitPipe)
+    distExit.y = 0
+    const exitDist = distExit.length()
+    const nearExit = this.mode === 'forest1' && exitDist < 2.75
+
+    // portal enter (hub) — telepipe takes priority over NPC if both in range
+    if (this.mode === 'hub' && !deploying && this.input.consumePressed('KeyE')) {
+      const p = this.world.portals[0]
+      let used = false
+      if (p) {
+        const d = this.tmp.copy(p.object.position).sub(this.player.position)
+        d.y = 0
+        if (d.length() < 2.6) {
+          this.enterMission()
+          used = true
+        }
+      }
+      if (!used && this.world.npcs[0]) {
+        const d = this.tmp.copy(this.world.npcs[0].object.position).sub(this.player.position)
+        d.y = 0
+        if (d.length() < 2.4) {
+          this.events.onHint?.('Guild Clerk: “Forest 1 is live. Use the telepipe when you are ready, hunter.”')
+        }
+      }
+    }
+
+    // Forest: E = exit telepipe when clear, else lock-on toggle
+    if (this.mode === 'forest1' && !deploying && this.input.consumePressed('KeyE')) {
+      if (nearExit && this.missionEnemies.length === 0) {
         gameAudio.playSfx('teleport')
         gameAudio.setZoneMusic('hub')
         this.mode = 'hub'
         this.missionWave = 0
+        this.missionElapsed = 0
         this.targetEnemyId = null
         this.player.position.copy(this.world.spawnPoint)
         this.playerHp = this.maxHp
         this.playerTp = this.maxTp
         this.events.onMission?.({
           active: false,
-          title: 'Pioneer 2 - Hunter\'s Guild',
-          objective: 'Mission complete. Use telepipe for another run.',
+          title: 'Pioneer 2 — Hunter\'s Guild',
+          objective: 'Quest complete. Board the telepipe again for another Forest 1 run.',
           job: 'HUmar',
         })
-        this.events.onHint?.('Returned to Pioneer 2.')
-        this.scene.background = new Color('#6a9ec4')
-        this.scene.fog?.color.set(0x7eb8dc)
+        this.events.onHint?.('Returned to Pioneer 2. Meseta and XP were saved to your character.')
+        this.world.setZoneAtmosphere('hub')
       } else {
         const prev = this.targetEnemyId
         const next = prev ? null : (this.nearestEnemy(14)?.id ?? null)
@@ -366,9 +440,17 @@ export class Engine {
       }
     }
 
-    // PSO style action palette
-    if (this.mode === 'forest1') {
-      if (this.consumeAnyPressed(['Digit1', 'Numpad1'])) this.normalAttack()
+    if (nearExit && this.missionEnemies.length === 0) {
+      interactPrompt = 'E — Return to Pioneer 2'
+    } else if (nearExit && this.missionEnemies.length > 0) {
+      interactPrompt = 'Extract locked — defeat remaining hostiles'
+    } else if (this.mode === 'forest1' && !deploying && !nearExit) {
+      interactPrompt = 'E — Lock-on / clear lock'
+    }
+
+    // PSO palette: keys + LMB primary
+    if (this.mode === 'forest1' && !deploying) {
+      if (this.consumeAnyPressed(['Digit1', 'Numpad1']) || this.input.consumeMouseButtonPressed(0)) this.normalAttack()
       if (this.consumeAnyPressed(['Digit2', 'Numpad2'])) this.heavyAttack()
       if (this.consumeAnyPressed(['Digit3', 'Numpad3'])) this.castTechnique()
     }
@@ -379,7 +461,7 @@ export class Engine {
     if (onGround) {
       this.player.position.y = groundY
       this.playerVel.y = Math.max(0, this.playerVel.y)
-      if (this.input.consumePressed('Space')) this.playerVel.y = 5
+      if (!deploying && this.input.consumePressed('Space')) this.playerVel.y = 5
       if (hasMove) {
         this.footstepT -= dt
         if (this.footstepT <= 0) {
@@ -393,21 +475,32 @@ export class Engine {
       this.playerVel.y -= 14 * dt
     }
 
-    // face
-    if (hasMove) {
+    // Character facing: lock-on faces target (PSO); else face move dir
+    if (lockedTarget) {
+      const dx = lockedTarget.obj.position.x - this.player.position.x
+      const dz = lockedTarget.obj.position.z - this.player.position.z
+      const yawTo = Math.atan2(dx, dz)
+      const t = 1 - Math.exp(-16 * dt)
+      this.playerYaw = lerpAngle(this.playerYaw, yawTo, t)
+      this.player.rotation.y = this.playerYaw
+    } else if (hasMove) {
       const desired = Math.atan2(move.x, move.z)
       const t = 1 - Math.exp(-14 * dt)
       this.playerYaw = lerpAngle(this.playerYaw, desired, t)
       this.player.rotation.y = this.playerYaw
     }
-    if (hasMove && !md.dragging) {
+
+    // Camera orbits behind character when not manually steering (PSO chase cam)
+    const autoCamOk = this.manualCamTimer <= 0 && !md.dragging
+    const wantCamBehind = (hasMove || !!lockedTarget) && autoCamOk
+    if (wantCamBehind) {
       const desired = this.playerYaw + Math.PI
-      const t = 1 - Math.exp(-3.5 * dt)
+      const t = 1 - Math.exp(-(lockedTarget ? 2.85 : 3.6) * dt)
       this.camYaw = lerpAngle(this.camYaw, desired, t)
     }
 
-    this.playerVel.x = move.x * speed
-    this.playerVel.z = move.z * speed
+    this.playerVel.x = hasMove ? move.x * speed : 0
+    this.playerVel.z = hasMove ? move.z * speed : 0
     this.player.position.addScaledVector(this.playerVel, dt)
 
     if (this.mode === 'forest1') {
@@ -420,22 +513,27 @@ export class Engine {
     }
 
     if (this.mode === 'forest1') {
+      const freezeAi = deploying
       for (const e of this.missionEnemies) {
         e.atkCd = Math.max(0, e.atkCd - dt)
         const toPlayer = this.tmp.copy(this.player.position).sub(e.obj.position)
         toPlayer.y = 0
         const dist = toPlayer.length()
         const speedEnemy = this.missionWave === 2 ? 2.2 : 1.8
-        if (dist > 0.001) {
-          toPlayer.normalize()
-          if (dist > 1.3) e.obj.position.addScaledVector(toPlayer, speedEnemy * dt)
-          e.obj.lookAt(this.player.position.x, e.obj.position.y, this.player.position.z)
-        }
-        e.obj.position.y = this.world.heightAt(e.obj.position.x, e.obj.position.z)
-        if (dist < 1.35 && e.atkCd <= 0) {
-          e.atkCd = 1.15
-          this.playerHp = Math.max(0, this.playerHp - (this.missionWave === 2 ? 11 : 8))
-          gameAudio.playSfx('player_hurt')
+        if (!freezeAi) {
+          if (dist > 0.001) {
+            toPlayer.normalize()
+            if (dist > 1.3) e.obj.position.addScaledVector(toPlayer, speedEnemy * dt)
+            e.obj.lookAt(this.player.position.x, e.obj.position.y, this.player.position.z)
+          }
+          e.obj.position.y = this.world.heightAt(e.obj.position.x, e.obj.position.z)
+          if (dist < 1.35 && e.atkCd <= 0) {
+            e.atkCd = 1.15
+            this.playerHp = Math.max(0, this.playerHp - (this.missionWave === 2 ? 11 : 8))
+            gameAudio.playSfx('player_hurt')
+          }
+        } else {
+          e.obj.position.y = this.world.heightAt(e.obj.position.x, e.obj.position.z)
         }
       }
       if (this.playerHp <= 0) {
@@ -443,8 +541,8 @@ export class Engine {
         this.playerTp = this.maxTp
         this.player.position.set(
           this.missionOrigin.x,
-          this.world.heightAt(this.missionOrigin.x, this.missionOrigin.z - 6.5),
-          this.missionOrigin.z - 6.5,
+          this.world.heightAt(this.missionOrigin.x, this.missionOrigin.z + this.missionSpawnZOfs),
+          this.missionOrigin.z + this.missionSpawnZOfs,
         )
         this.events.onHint?.('You were incapacitated and revived at the Forest 1 drop point.')
       }
@@ -478,10 +576,13 @@ export class Engine {
       }
     }
 
-    // camera
+    // camera — chase + slight bias toward lock target (PSO framing)
     const desiredTarget = this.tmp2.copy(this.player.position).add(new Vector3(0, 1.02, 0))
     const lock = this.getTargetEnemy()
-    if (lock) desiredTarget.lerp(lock.obj.position.clone().add(new Vector3(0, 0.7, 0)), 0.38)
+    if (lock) {
+      this.tmp3.copy(lock.obj.position).add(new Vector3(0, 0.75, 0))
+      desiredTarget.lerp(this.tmp3, 0.42)
+    }
     const offset = new Vector3(
       Math.sin(this.camYaw) * Math.cos(this.camPitch),
       Math.sin(this.camPitch),
@@ -494,6 +595,15 @@ export class Engine {
     this.lastHudT += dt
     if (this.lastHudT > 0.1) {
       this.lastHudT = 0
+      const missionPhase =
+        this.mode === 'hub'
+          ? 'hub'
+          : deploying
+            ? 'field_deploy'
+            : this.missionEnemies.length === 0
+              ? 'field_clear'
+              : 'field_combat'
+
       this.events.onCombatHud?.({
         job: 'HUmar',
         hp: this.playerHp,
@@ -507,6 +617,9 @@ export class Engine {
         enemiesRemaining: this.mode === 'forest1' ? this.missionEnemies.length : 0,
         wave: this.mode === 'forest1' ? Math.max(1, this.missionWave) : 0,
         physicsReady: !!this.physics,
+        missionPhase,
+        missionTimeSec: this.mode === 'forest1' ? this.missionElapsed : 0,
+        interactPrompt,
       })
     }
 
@@ -522,8 +635,10 @@ export class Engine {
     gameAudio.setZoneMusic('forest1')
     this.mode = 'forest1'
     this.missionWave = 1
+    this.missionElapsed = 0
+    this.missionDeployTimer = 0.9
     this.targetEnemyId = null
-    const startZ = this.missionOrigin.z - 6.5
+    const startZ = this.missionOrigin.z + this.missionSpawnZOfs
     const startY = this.world.heightAt(this.missionOrigin.x, startZ)
     this.player.position.set(this.missionOrigin.x, startY, startZ)
     this.playerVel.set(0, 0, 0)
@@ -532,17 +647,19 @@ export class Engine {
     this.comboStep = 0
     this.cdHeavy = 0
     this.cdTech = 0
+    this.camYaw = this.playerYaw + Math.PI
     this.spawnMissionWave(1)
     this.events.onMission?.({
       active: true,
-      title: 'Forest 1',
-      objective: 'Wave 1: Defeat the Boomas ahead.',
+      title: 'Forest 1 — VR Field',
+      objective: 'Deploying… Clear all waves, then use the return telepipe.',
       job: 'HUmar',
     })
-    this.events.onHint?.('Forest 1 deployed. Use 1 normal combo, 2 heavy, 3 technique, E to lock target.')
+    this.events.onHint?.(
+      'PSO controls: camera-relative WASD, RMB or ←→ orbit, wheel zoom, E lock-on, 1/LMB combo, 2 heavy, 3 tech.',
+    )
 
-    this.scene.fog?.color.set(0x3f6f57)
-    this.scene.background = new Color(0x162b1f)
+    this.world.setZoneAtmosphere('forest1')
   }
 
   private spawnMissionWave(wave: 1 | 2) {

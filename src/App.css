@@ -379,6 +379,31 @@
   margin-right: 4px;
 }
 
+/* Interaction prompt (PSO-style context action) */
+.hud-interact {
+  position: absolute;
+  left: 50%;
+  top: 86px;
+  transform: translateX(-50%);
+  padding: 5px 16px;
+  font-family: var(--heading);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: rgba(232, 248, 255, 0.95);
+  background: rgba(4, 18, 32, 0.88);
+  border: 1px solid rgba(0, 255, 200, 0.35);
+  border-radius: 2px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.hud-radar-time,
+.hud-radar-phase {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
 /* Wave banner */
 .hud-wave {
   position: absolute;

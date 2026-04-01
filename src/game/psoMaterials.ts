@@ -2,26 +2,27 @@ import {
   ClampToEdgeWrapping,
   Color,
   DataTexture,
-  MeshBasicMaterial,
   MeshStandardMaterial,
   MeshToonMaterial,
   NearestFilter,
   RGBAFormat,
 } from 'three'
 
-/** Shared 4-step toon ramp (cel shading) */
+/** Shared cel ramp — cool highlights, blue-mid, deep violet shadow (PSO remaster read) */
 let gradientMap: DataTexture | null = null
 
 export function getToonGradientMap(): DataTexture {
   if (gradientMap) return gradientMap
-  const w = 4
+  const w = 6
   const h = 1
   const data = new Uint8Array(w * h * 4)
   const bands: [number, number, number][] = [
-    [255, 255, 255],
-    [210, 215, 230],
-    [130, 138, 165],
-    [55, 62, 85],
+    [255, 252, 248],
+    [220, 228, 245],
+    [170, 182, 215],
+    [110, 118, 155],
+    [55, 58, 82],
+    [28, 26, 42],
   ]
   for (let i = 0; i < w; i++) {
     const [r, g, b] = bands[i]
@@ -57,19 +58,13 @@ export function psoToonVertex() {
   })
 }
 
-/** Glowing tech / energy (still reads “remaster” with bloom) */
+/** Tech / energy — tuned for bloom, slightly glossy */
 export function psoGlow(color: number, emissive: number, intensity = 0.9) {
   return new MeshStandardMaterial({
     color,
     emissive,
     emissiveIntensity: intensity,
-    roughness: 0.35,
-    metalness: 0.15,
-  })
-}
-
-export function psoSkyBasic() {
-  return new MeshBasicMaterial({
-    color: 0x3d6a9c,
+    roughness: 0.28,
+    metalness: 0.22,
   })
 }

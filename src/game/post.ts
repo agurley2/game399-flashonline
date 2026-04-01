@@ -20,7 +20,8 @@ export function createPostFX(opts: {
   composer.setSize(opts.width, opts.height)
   composer.addPass(new RenderPass(opts.scene, opts.camera))
 
-  const bloom = new UnrealBloomPass(new Vector2(opts.width, opts.height), 0.42, 0.38, 0.94)
+  // Cel + tech glow: moderate strength, soft threshold so trims read “PSO”
+  const bloom = new UnrealBloomPass(new Vector2(opts.width, opts.height), 0.48, 0.4, 0.88)
   composer.addPass(bloom)
 
   return {

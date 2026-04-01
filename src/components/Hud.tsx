@@ -19,6 +19,9 @@ export function Hud(props: {
         enemiesRemaining: number
         wave: number
         physicsReady: boolean
+        missionPhase: 'hub' | 'field_deploy' | 'field_combat' | 'field_clear'
+        missionTimeSec: number
+        interactPrompt: string | null
       }
     | null
 }) {
@@ -46,6 +49,18 @@ export function Hud(props: {
 
   const mapLabel = mission?.active ? 'FOREST 1' : 'PIONEER 2'
   const lockLabel = combatHud?.lockOn ? 'TARGET LOCK' : 'MANUAL AIM'
+  const phaseLabel =
+    combatHud?.missionPhase === 'field_deploy'
+      ? 'DEPLOY'
+      : combatHud?.missionPhase === 'field_clear'
+        ? 'CLEAR'
+        : combatHud?.missionPhase === 'field_combat'
+          ? 'COMBAT'
+          : 'LOBBY'
+  const missionClock =
+    combatHud && mission?.active && combatHud.missionPhase !== 'hub'
+      ? `${Math.floor(combatHud.missionTimeSec / 60)}:${String(Math.floor(combatHud.missionTimeSec % 60)).padStart(2, '0')}`
+      : null
 
   return (
     <div className="ui" data-zone={zone}>
@@ -67,7 +82,11 @@ export function Hud(props: {
           <div className="hud-radar-ring" />
           <div className="hud-radar-grid" />
           <div className="hud-radar-label">{mapLabel}</div>
-          <div className="hud-radar-sub">{lockLabel}</div>
+          <div className="hud-radar-sub">
+            {lockLabel}
+            {missionClock ? <span className="hud-radar-time"> · {missionClock}</span> : null}
+            <span className="hud-radar-phase"> · {phaseLabel}</span>
+          </div>
           <div className="hud-radar-blip" title="You" />
         </div>
       </header>
@@ -119,6 +138,12 @@ export function Hud(props: {
         </div>
       </aside>
 
+      {combatHud?.interactPrompt ? (
+        <div className="hud-interact" role="status">
+          {combatHud.interactPrompt}
+        </div>
+      ) : null}
+
       {mission?.active ? (
         <div className="hud-wave" role="status">
           WAVE {combatHud?.wave ?? 1} — REMAINING {enemies}
@@ -133,7 +158,7 @@ export function Hud(props: {
         <div className="hud-palette-label">PALETTE</div>
         <div className="hud-slots">
           <div className="hud-slot">
-            <span className="hud-slot-key">1</span>
+            <span className="hud-slot-key">1 · LMB</span>
             <span className="hud-slot-name">NORMAL</span>
             <span className="hud-slot-hint">Combo</span>
           </div>
@@ -149,7 +174,7 @@ export function Hud(props: {
           </div>
         </div>
         <div className="hud-palette-meta">
-          COMBO {combatHud?.comboStep ?? 0}/3 · {combatHud?.lockOn ? 'LOCK-ON' : 'E TO LOCK'}
+          COMBO {combatHud?.comboStep ?? 0}/3 · {combatHud?.lockOn ? 'LOCK-ON' : 'E TO LOCK'} · RMB CAM
         </div>
       </nav>
     </div>

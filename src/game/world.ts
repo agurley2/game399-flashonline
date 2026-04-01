@@ -1,5 +1,7 @@
 import {
+  AmbientLight,
   BufferAttribute,
+  CanvasTexture,
   Color,
   DirectionalLight,
   Fog,
@@ -7,16 +9,19 @@ import {
   HemisphereLight,
   MathUtils,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   MeshToonMaterial,
   Object3D,
   PlaneGeometry,
+  PointLight,
   Scene,
   SphereGeometry,
+  TorusGeometry,
   Vector3,
 } from 'three'
 import { makeHedgePillar, makeNpcGuide, makePortal, makeShell, makeTree } from './procModels'
-import { psoSkyBasic, psoToonVertex } from './psoMaterials'
+import { psoToon, psoToonVertex } from './psoMaterials'
 
 export type World = {
   root: Group
@@ -25,6 +30,25 @@ export type World = {
   portals: { id: string; name: string; object: Object3D }[]
   collectibles: { id: string; type: 'shell'; object: Object3D }[]
   heightAt: (x: number, z: number) => number
+  /** Pioneer 2 vs VR field — fog, sky gradient, accent lights */
+  setZoneAtmosphere: (zone: 'hub' | 'forest1') => void
+}
+
+function makeSkyGradientTexture(top: Color, mid: Color, horizon: Color) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 8
+  canvas.height = 256
+  const ctx = canvas.getContext('2d')!
+  const g = ctx.createLinearGradient(0, 0, 0, 256)
+  g.addColorStop(0, `#${top.getHexString()}`)
+  g.addColorStop(0.38, `#${mid.getHexString()}`)
+  g.addColorStop(1, `#${horizon.getHexString()}`)
+  ctx.fillStyle = g
+  ctx.fillRect(0, 0, 8, 256)
+  const tex = new CanvasTexture(canvas)
+  tex.colorSpace = 'srgb'
+  tex.needsUpdate = true
+  return tex
 }
 
 function hash2(x: number, z: number) {
@@ -64,19 +88,44 @@ function fbm(x: number, z: number) {
 }
 
 export function createWorld(scene: Scene): World {
-  scene.background = new Color('#6a9ec4')
-  scene.fog = new Fog('#7eb8dc', 28, 128)
+  const hubSkyTex = makeSkyGradientTexture(
+    new Color(0xa8d8ff),
+    new Color(0x6a9ec8),
+    new Color(0x4a6a88),
+  )
+  const forestSkyTex = makeSkyGradientTexture(
+    new Color(0x0a1a12),
+    new Color(0x1a3d2a),
+    new Color(0x2d5a48),
+  )
+
+  scene.background = new Color(0x6a9ec4)
+  scene.fog = new Fog(0x7eb8dc, 26, 132)
 
   const root = new Group()
   scene.add(root)
 
-  scene.add(new HemisphereLight(0xc8e8ff, 0x1a2535, 0.85))
-  const sun = new DirectionalLight(0xfff4e0, 1.15)
-  sun.position.set(14, 22, 10)
+  const ambient = new AmbientLight(0x88a0c8, 0.22)
+  scene.add(ambient)
+
+  const hemi = new HemisphereLight(0xc8e8ff, 0x1a2535, 0.72)
+  scene.add(hemi)
+
+  const sun = new DirectionalLight(0xfff2dd, 1.22)
+  sun.position.set(18, 26, 12)
   scene.add(sun)
-  const fill = new DirectionalLight(0x66ccff, 0.35)
-  fill.position.set(-20, 8, -8)
+
+  const fill = new DirectionalLight(0x88c8ff, 0.42)
+  fill.position.set(-22, 14, -10)
   scene.add(fill)
+
+  const portalLight = new PointLight(0x44eeff, 1.25, 38, 1.8)
+  portalLight.position.set(-13, 4.2, 8)
+  scene.add(portalLight)
+
+  const plazaAccent = new PointLight(0xaaccff, 0.45, 28, 2)
+  plazaAccent.position.set(-8, 3.5, 6)
+  scene.add(plazaAccent)
 
   const heightAt = (x: number, z: number) => {
     const n = fbm((x + 1000) * 0.04, (z + 1000) * 0.04)
@@ -116,14 +165,14 @@ export function createWorld(scene: Scene): World {
     const creekDist = Math.abs(v.z - creekZ)
     const nearCreek = MathUtils.clamp(1 - creekDist / 6, 0, 1)
     const hNorm = MathUtils.clamp((y + 2.5) / 6, 0, 1)
-    const grass = new Color().setHSL(0.32, 0.55, 0.28)
-    const dirt = new Color().setHSL(0.08, 0.55, 0.22)
-    const stone = new Color().setHSL(0.60, 0.08, 0.42)
-    const plazaTile = new Color().setHSL(0.55, 0.12, 0.38)
+    const grass = new Color().setHSL(0.31, 0.58, 0.3)
+    const dirt = new Color().setHSL(0.09, 0.5, 0.24)
+    const stone = new Color().setHSL(0.58, 0.1, 0.44)
+    const plazaTile = new Color().setHSL(0.56, 0.14, 0.42)
     c.copy(grass).lerp(dirt, nearCreek * 0.55)
     c.lerp(stone, Math.pow(hNorm, 2.2) * 0.35)
     const pd = Math.hypot(v.x + 8, v.z - 6)
-    if (pd < 14) c.lerp(plazaTile, (1 - pd / 14) * 0.55)
+    if (pd < 14) c.lerp(plazaTile, (1 - pd / 14) * 0.62)
     colors.push(c.r, c.g, c.b)
   }
   groundGeo.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3))
@@ -131,22 +180,29 @@ export function createWorld(scene: Scene): World {
   const ground = new Mesh(groundGeo, psoToonVertex())
   root.add(ground)
 
-  // Procedural sky dome (flat cel read; matches PSO remaster vibe)
-  const skyGeo = new SphereGeometry(260, 32, 18)
+  // Pioneer 2 plaza ring — subtle sci-fi deck
+  const plazaRing = new Mesh(
+    new TorusGeometry(15.5, 0.12, 8, 64),
+    psoToon(0x3a4a62, { emissive: 0x102030, emissiveIntensity: 0.12 }),
+  )
+  plazaRing.rotation.x = MathUtils.degToRad(90)
+  plazaRing.position.set(-8, heightAt(-8, 6) + 0.04, 6)
+  root.add(plazaRing)
+
+  const skyGeo = new SphereGeometry(260, 48, 24)
   skyGeo.scale(-1, 1, 1)
-  const skyMat = psoSkyBasic()
-  skyMat.color.setHex(0x7eb8dc)
+  const skyMat = new MeshBasicMaterial({ map: hubSkyTex, fog: false })
   const sky = new Mesh(skyGeo, skyMat)
   sky.position.y = 40
+  sky.name = 'pso-sky'
   root.add(sky)
 
-  // Lobby and forest trees
   for (let i = 0; i < 180; i++) {
     const x = (Math.random() - 0.5) * 150
     const z = (Math.random() - 0.5) * 150
     if (Math.hypot(x + 8, z - 6) < 24) continue
     const t = makeTree(i * 13.37)
-    const tint = z > 50 ? 0.9 : 1
+    const tint = z > 50 ? 0.88 : 1
     t.traverse((o) => {
       const mat = (o as Mesh).material
       if (!mat) return
@@ -161,17 +217,14 @@ export function createWorld(scene: Scene): World {
     root.add(t)
   }
 
-  // Hunter's Guild clerk
   const npc = makeNpcGuide()
   npc.position.set(-4.5, heightAt(-4.5, 5.4), 5.4)
   root.add(npc)
 
-  // Telepipe to Forest 1
   const portal = makePortal()
   portal.position.set(-13, heightAt(-13, 8), 8)
   root.add(portal)
 
-  // Shells
   const collectibles: { id: string; type: 'shell'; object: Object3D }[] = []
   ;[
     [-9.8, 4.6],
@@ -186,7 +239,6 @@ export function createWorld(scene: Scene): World {
     collectibles.push({ id: `shell:${i}`, type: 'shell', object: shell })
   })
 
-  // Forest 1 entry gate
   const mz = 86
   for (let i = -5; i <= 5; i++) {
     const x = i * 2.3
@@ -199,6 +251,46 @@ export function createWorld(scene: Scene): World {
     root.add(h1, h2)
   }
 
+  const setZoneAtmosphere = (zone: 'hub' | 'forest1') => {
+    if (zone === 'hub') {
+      scene.background = new Color(0x6a9ec4)
+      scene.fog = new Fog(0x7eb8dc, 26, 132)
+      skyMat.map = hubSkyTex
+      skyMat.needsUpdate = true
+      ambient.color.setHex(0x88a0c8)
+      ambient.intensity = 0.22
+      hemi.color.setHex(0xc8e8ff)
+      hemi.groundColor.setHex(0x1a2535)
+      hemi.intensity = 0.72
+      sun.color.setHex(0xfff2dd)
+      sun.intensity = 1.22
+      fill.color.setHex(0x88c8ff)
+      fill.intensity = 0.42
+      portalLight.color.setHex(0x44eeff)
+      portalLight.intensity = 1.25
+      plazaAccent.intensity = 0.45
+    } else {
+      scene.background = new Color(0x0d1f18)
+      scene.fog = new Fog(0x1a3328, 12, 78)
+      skyMat.map = forestSkyTex
+      skyMat.needsUpdate = true
+      ambient.color.setHex(0x2a4038)
+      ambient.intensity = 0.18
+      hemi.color.setHex(0x4a6a58)
+      hemi.groundColor.setHex(0x080c0a)
+      hemi.intensity = 0.55
+      sun.color.setHex(0xc8e8d8)
+      sun.intensity = 0.95
+      fill.color.setHex(0x448866)
+      fill.intensity = 0.28
+      portalLight.color.setHex(0x66ffcc)
+      portalLight.intensity = 0.35
+      plazaAccent.intensity = 0.08
+    }
+  }
+
+  setZoneAtmosphere('hub')
+
   return {
     root,
     spawnPoint: new Vector3(-7, heightAt(-7, 6), 6),
@@ -206,6 +298,6 @@ export function createWorld(scene: Scene): World {
     portals: [{ id: 'forest1-telepipe', name: 'Telepipe: Forest 1', object: portal }],
     collectibles,
     heightAt,
+    setZoneAtmosphere,
   }
 }
-

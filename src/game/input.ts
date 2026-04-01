@@ -12,6 +12,8 @@ type Key =
   | 'Numpad1'
   | 'Numpad2'
   | 'Numpad3'
+  | 'ArrowLeft'
+  | 'ArrowRight'
 
 export class Input {
   private keys = new Set<string>()
@@ -19,6 +21,8 @@ export class Input {
   private mouseDx = 0
   private mouseDy = 0
   private isRmbDown = false
+  private mouseButtonOnce = new Set<number>()
+  private wheelAccum = 0
 
   attach(target: HTMLElement) {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -37,6 +41,8 @@ export class Input {
       this.mouseDx = 0
       this.mouseDy = 0
       this.isRmbDown = false
+      this.mouseButtonOnce.clear()
+      this.wheelAccum = 0
     }
 
     const onContextMenu = (e: MouseEvent) => {
@@ -44,6 +50,7 @@ export class Input {
     }
     const onMouseDown = (e: MouseEvent) => {
       if (e.button === 2) this.isRmbDown = true
+      this.mouseButtonOnce.add(e.button)
     }
     const onMouseUp = (e: MouseEvent) => {
       if (e.button === 2) this.isRmbDown = false
@@ -54,6 +61,14 @@ export class Input {
       this.mouseDy += e.movementY
     }
 
+    const onWheel = (e: WheelEvent) => {
+      const el = document.activeElement
+      const tag = el instanceof HTMLElement ? el.tagName : ''
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (el instanceof HTMLElement && el.isContentEditable)) return
+      e.preventDefault()
+      this.wheelAccum += e.deltaY
+    }
+
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)
     window.addEventListener('blur', onBlur)
@@ -61,6 +76,7 @@ export class Input {
     target.addEventListener('mousedown', onMouseDown)
     window.addEventListener('mouseup', onMouseUp)
     window.addEventListener('mousemove', onMouseMove)
+    target.addEventListener('wheel', onWheel, { passive: false })
 
     return () => {
       window.removeEventListener('keydown', onKeyDown)
@@ -70,6 +86,7 @@ export class Input {
       target.removeEventListener('mousedown', onMouseDown)
       window.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('mousemove', onMouseMove)
+      target.removeEventListener('wheel', onWheel)
     }
   }
 
@@ -90,5 +107,18 @@ export class Input {
     this.mouseDy = 0
     return { dx, dy, dragging: this.isRmbDown }
   }
-}
 
+  /** Primary attack / UI click on canvas (button 0 = LMB) */
+  consumeMouseButtonPressed(button: 0 | 1 | 2) {
+    const had = this.mouseButtonOnce.has(button)
+    this.mouseButtonOnce.delete(button)
+    return had
+  }
+
+  /** Mouse wheel delta (negative = zoom in). Consumed each frame. */
+  consumeWheel() {
+    const w = this.wheelAccum
+    this.wheelAccum = 0
+    return w
+  }
+}
