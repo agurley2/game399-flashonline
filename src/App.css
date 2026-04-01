@@ -1,0 +1,240 @@
+.app {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.viewport-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.viewport {
+  width: 100%;
+  height: 100%;
+}
+
+/* HUD */
+.ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--sans);
+}
+
+.topbar {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 12px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.brandplate {
+  pointer-events: auto;
+  border-radius: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(120% 140% at 20% 10%, rgba(255, 255, 255, 0.16), transparent 50%),
+    linear-gradient(180deg, rgba(9, 12, 20, 0.86), rgba(9, 12, 20, 0.56));
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 35px rgba(0, 0, 0, 0.22);
+}
+.brandplate-title {
+  font-family: var(--heading);
+  font-size: 16px;
+}
+.brandplate-sub {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.topbar-center {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.tipchip,
+.questchip {
+  pointer-events: auto;
+  border-radius: 999px;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(9, 12, 20, 0.55);
+  backdrop-filter: blur(10px);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  max-width: min(840px, calc(100vw - 420px));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.questchip {
+  background: rgba(59, 130, 246, 0.18);
+}
+
+.minimap {
+  width: 160px;
+  height: 160px;
+  pointer-events: auto;
+}
+.minimap-face {
+  width: 100%;
+  height: 100%;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background:
+    radial-gradient(110px 110px at 35% 35%, rgba(34, 197, 94, 0.42), transparent 62%),
+    radial-gradient(110px 110px at 70% 70%, rgba(14, 165, 233, 0.32), transparent 62%),
+    linear-gradient(180deg, rgba(9, 12, 20, 0.9), rgba(9, 12, 20, 0.58));
+  backdrop-filter: blur(10px);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 18px 35px rgba(0, 0, 0, 0.22);
+}
+.minimap-title {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: rgba(255, 255, 255, 0.78);
+}
+.minimap-sub {
+  position: absolute;
+  left: 12px;
+  top: 26px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+}
+.minimap-dot {
+  position: absolute;
+  left: 50%;
+  top: 52%;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22), 0 0 18px rgba(245, 158, 11, 0.5);
+}
+
+.playerframe {
+  position: absolute;
+  left: 14px;
+  bottom: 16px;
+  display: grid;
+  grid-template-columns: 54px 1fr;
+  gap: 10px;
+  width: 320px;
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: linear-gradient(180deg, rgba(9, 12, 20, 0.9), rgba(9, 12, 20, 0.6));
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 35px rgba(0, 0, 0, 0.22);
+  pointer-events: auto;
+}
+.pf-portrait {
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: radial-gradient(circle at 35% 35%, rgba(96, 165, 250, 0.8), rgba(59, 130, 246, 0.15) 60%);
+}
+.pf-name {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 6px;
+}
+.pf-note {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+}
+.bars {
+  display: grid;
+  gap: 6px;
+}
+.bar {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.bar .fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ef4444, #fb7185);
+}
+.xpbar {
+  margin-top: 8px;
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.xpbar .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, #a78bfa, #60a5fa);
+}
+.xpbar .label {
+  position: relative;
+  z-index: 1;
+  font-size: 11px;
+  padding: 0 8px;
+  line-height: 14px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.actionbar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+.slots {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(9, 12, 20, 0.68);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 35px rgba(0, 0, 0, 0.22);
+}
+.slot {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  position: relative;
+}
+.slot .key {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.78);
+}
+.slot .cooldown,
+.slot .charges {
+  position: absolute;
+  right: 8px;
+  top: 6px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.72);
+}
