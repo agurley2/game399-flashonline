@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Temporary audio download/extract scratch (keep shipped assets in public/audio/music + public/audio/sfx)
+public/audio/_dl/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

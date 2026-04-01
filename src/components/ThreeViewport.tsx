@@ -10,9 +10,15 @@ type ThreeViewportProps = {
   onCombatHud?: (s: {
     job: string
     hp: number
-    charges3: number
-    cd2: number
+    maxHp: number
+    tp: number
+    maxTp: number
+    comboStep: number
+    lockOn: boolean
+    cdHeavy: number
+    cdTech: number
     enemiesRemaining: number
+    wave: number
     physicsReady: boolean
   }) => void
 }

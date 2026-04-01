@@ -1,0 +1,30 @@
+Flash Online — bundled audio credits
+====================================
+
+This folder contains third-party audio used under permissive licenses.
+Keep this file with the shipped game.
+
+Music
+-----
+1) public/audio/music/forest_ambience.mp3
+   - Title: Forest Ambience
+   - Author: TinyWorlds
+   - Source: https://opengameart.org/content/forest-ambience
+   - License: CC0 1.0 Universal
+
+2) public/audio/music/hub_drone.wav
+   - Title: Sci-Fi Drone Loop
+   - Author: jdagenet (Jason Dagenet)
+   - Source: https://opengameart.org/content/sci-fi-drone-loop
+   - License: CC-BY 3.0
+   - Note: attribution requested by the author (see notice on the OGA page).
+
+Sound effects (OGG)
+-------------------
+Derived from “50 RPG sound effects” by Kenney, packaged on OpenGameArt.
+- Source: https://opengameart.org/content/50-rpg-sound-effects
+- License: CC0 1.0 Universal
+- Attribution: optional (“Credit Kenney.nl” if you want).
+
+Files copied into public/audio/sfx/ are renamed for clarity but are taken from
+the Kenney RPG pack (knife slices, chop, footsteps, doors, metal, cloth, etc.).

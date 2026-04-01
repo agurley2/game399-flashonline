@@ -18,18 +18,24 @@ import type { GameState } from './types'
 import { createSphereBody, initPhysicsWorld, removeBody, type PhysicsWorld } from '../physics'
 import { makeArrowMesh, makeHedgeEnemy } from './procModels'
 import { createPostFX, type PostFX } from './post'
+import { gameAudio } from '../audio/gameAudio'
 
 export type EngineEvents = {
   onHint?: (text: string) => void
   onGameState?: (state: GameState) => void
-  onNearbyNpc?: (npcName: string | null) => void
   onMission?: (m: { active: boolean; title: string; objective: string; job: string }) => void
   onCombatHud?: (s: {
     job: string
     hp: number
-    charges3: number
-    cd2: number
+    maxHp: number
+    tp: number
+    maxTp: number
+    comboStep: number
+    lockOn: boolean
+    cdHeavy: number
+    cdTech: number
     enemiesRemaining: number
+    wave: number
     physicsReady: boolean
   }) => void
 }
@@ -57,19 +63,37 @@ export class Engine {
   private tmp2 = new Vector3()
 
   private physics: PhysicsWorld | null = null
-  private mode: 'hub' | 'mission' = 'hub'
-  private missionOrigin = new Vector3(0, 0, 80)
-  private missionEnemies: { id: string; hp: number; obj: Group }[] = []
+  private mode: 'hub' | 'forest1' = 'hub'
+  private missionOrigin = new Vector3(0, 0, 88)
+  private missionEnemies: { id: string; hp: number; atkCd: number; obj: Group }[] = []
   private arrows: { body: any; mesh: Object3D; damage: number; ttl: number }[] = []
-  private playerHp = 100
-  private pickupCharges = 0
-  private cd2 = 0
+  private targetEnemyId: string | null = null
+  private missionWave = 0
+  private playerHp = 120
+  private maxHp = 120
+  private playerTp = 36
+  private maxTp = 36
+  private comboStep = 0
+  private comboTimer = 0
+  private cdHeavy = 0
+  private cdTech = 0
+  private meseta = 240
   private lastHudT = 0
+  private lastStateT = 0
+  private footstepT = 0
+  private footstepIdx = 0
 
   private events: EngineEvents
   private game: GameState = {
     xp: 0,
     level: 1,
+    meseta: 240,
+    className: 'HUmar',
+    hp: 120,
+    maxHp: 120,
+    tp: 36,
+    maxTp: 36,
+    zone: 'Pioneer 2',
     inventory: [],
     activeQuestId: null,
     completedQuestIds: [],
@@ -98,15 +122,22 @@ export class Engine {
     this.resize()
 
     this.detachInput = this.input.attach(this.renderer.domElement)
-    this.events.onHint?.('WASD move • Shift sprint • Space jump • RMB drag camera • E interact')
+    this.events.onHint?.('WASD move • Shift run • Space dodge hop • RMB camera • E interact/lock')
     this.events.onGameState?.(this.game)
-    this.events.onMission?.({ active: false, title: 'Sanctuary', objective: 'Explore the hub.', job: 'Explorer' })
+    this.events.onMission?.({
+      active: false,
+      title: 'Pioneer 2 - Hunter\'s Guild',
+      objective: 'Press E at the telepipe to start Forest 1.',
+      job: 'HUmar',
+    })
 
     this.missionOrigin.set(0, this.world.heightAt(0, this.missionOrigin.z), this.missionOrigin.z)
 
     void initPhysicsWorld({ x: this.world.spawnPoint.x, y: this.world.spawnPoint.y, z: this.world.spawnPoint.z }).then(
       (pw) => (this.physics = pw),
     )
+
+    gameAudio.prime('hub')
   }
 
   chooseAction(_actionId: string) {
@@ -168,7 +199,120 @@ export class Engine {
     return false
   }
 
+  private updateGameState() {
+    this.game.hp = Math.round(this.playerHp)
+    this.game.maxHp = this.maxHp
+    this.game.tp = Math.round(this.playerTp)
+    this.game.maxTp = this.maxTp
+    this.game.meseta = this.meseta
+    this.game.zone = this.mode === 'forest1' ? 'Forest 1' : 'Pioneer 2'
+    this.events.onGameState?.({ ...this.game })
+  }
+
+  private nearestEnemy(maxDistance = 14) {
+    let best: { id: string; dist: number } | null = null
+    for (const e of this.missionEnemies) {
+      const d = this.tmp.copy(e.obj.position).sub(this.player.position)
+      d.y = 0
+      const dist = d.length()
+      if (dist > maxDistance) continue
+      if (!best || dist < best.dist) best = { id: e.id, dist }
+    }
+    return best
+  }
+
+  private getTargetEnemy() {
+    if (!this.targetEnemyId) return null
+    return this.missionEnemies.find((e) => e.id === this.targetEnemyId) ?? null
+  }
+
+  private applyEnemyDamage(enemyId: string, damage: number) {
+    const enemy = this.missionEnemies.find((e) => e.id === enemyId)
+    if (!enemy) return
+    enemy.hp -= damage
+    if (enemy.hp > 0) return
+    gameAudio.playSfx('enemy_death')
+    this.world.root.remove(enemy.obj)
+    this.missionEnemies = this.missionEnemies.filter((e) => e.id !== enemy.id)
+    if (this.targetEnemyId === enemy.id) this.targetEnemyId = null
+    this.game.xp += 18
+    this.meseta += 9
+
+    if (this.missionEnemies.length === 0) {
+      if (this.missionWave === 1) {
+        gameAudio.playSfx('wave_complete')
+        this.missionWave = 2
+        this.spawnMissionWave(2)
+        this.events.onMission?.({
+          active: true,
+          title: 'Forest 1',
+          objective: 'Wave 2: Eliminate all Booma variants.',
+          job: 'HUmar',
+        })
+      } else {
+        gameAudio.playSfx('wave_complete')
+        this.events.onMission?.({
+          active: true,
+          title: 'Forest 1',
+          objective: 'Area clear. Return to telepipe (E).',
+          job: 'HUmar',
+        })
+        this.events.onHint?.('Forest 1 clear. Move to telepipe and press E to return.')
+      }
+    }
+  }
+
+  private normalAttack() {
+    this.comboStep = (this.comboStep % 3) + 1
+    this.comboTimer = 0.8
+    gameAudio.playSfx(this.comboStep === 1 ? 'melee_combo_a' : this.comboStep === 2 ? 'melee_combo_b' : 'melee_impact')
+    const nearest = this.nearestEnemy(3.2)
+    const enemyId = this.targetEnemyId ?? nearest?.id
+    if (!enemyId) return
+    const enemy = this.missionEnemies.find((e) => e.id === enemyId)
+    if (!enemy) return
+    const d = this.tmp.copy(enemy.obj.position).sub(this.player.position)
+    d.y = 0
+    if (d.length() > 3.2) return
+    const damage = [18, 22, 28][this.comboStep - 1]
+    this.applyEnemyDamage(enemy.id, damage)
+  }
+
+  private heavyAttack() {
+    if (this.cdHeavy > 0) return
+    gameAudio.playSfx('melee_heavy')
+    this.cdHeavy = 2.2
+    const forward = new Vector3(Math.sin(this.playerYaw), 0, Math.cos(this.playerYaw)).normalize()
+    for (const e of this.missionEnemies) {
+      const d = this.tmp.copy(e.obj.position).sub(this.player.position)
+      d.y = 0
+      const dist = d.length()
+      if (dist > 4.2) continue
+      const facing = d.normalize().dot(forward)
+      if (facing > 0.2) this.applyEnemyDamage(e.id, 36)
+    }
+  }
+
+  private castTechnique() {
+    if (this.cdTech > 0 || this.playerTp < 8) return
+    this.playerTp -= 8
+    this.cdTech = 3
+    if (this.playerHp < this.maxHp * 0.65) {
+      gameAudio.playSfx('tech_heal')
+      this.playerHp = Math.min(this.maxHp, this.playerHp + 30)
+      return
+    }
+    gameAudio.playSfx('tech_cast')
+    this.fireArrow({ damage: 28, speed: 20, color: 0x38bdf8 })
+  }
+
   private step(dt: number) {
+    this.comboTimer = Math.max(0, this.comboTimer - dt)
+    if (this.comboTimer <= 0) this.comboStep = 0
+    this.cdHeavy = Math.max(0, this.cdHeavy - dt)
+    this.cdTech = Math.max(0, this.cdTech - dt)
+    this.playerTp = Math.min(this.maxTp, this.playerTp + dt * 1.4)
+
     const md = this.input.consumeMouseDelta()
     if (md.dragging) {
       const s = 0.0022
@@ -197,33 +341,43 @@ export class Engine {
       }
     }
 
-    // (Temporary) allow returning to hub with E at mission start area
-    if (this.mode === 'mission' && this.input.consumePressed('KeyE')) {
-      const d = this.tmp.copy(this.player.position).sub(new Vector3(this.missionOrigin.x, this.player.position.y, this.missionOrigin.z - 6))
+    // In Forest 1, E returns at telepipe when clear, otherwise toggles lock-on.
+    if (this.mode === 'forest1' && this.input.consumePressed('KeyE')) {
+      const d = this.tmp
+        .copy(this.player.position)
+        .sub(new Vector3(this.missionOrigin.x, this.player.position.y, this.missionOrigin.z - 6.5))
       d.y = 0
       if (d.length() < 2.5 && this.missionEnemies.length === 0) {
+        gameAudio.playSfx('teleport')
+        gameAudio.setZoneMusic('hub')
         this.mode = 'hub'
+        this.missionWave = 0
+        this.targetEnemyId = null
         this.player.position.copy(this.world.spawnPoint)
-        this.events.onMission?.({ active: false, title: 'Sanctuary', objective: 'Explore the hub.', job: 'Explorer' })
-        // hub mood
-        this.scene.background = new Color('#86d8ff')
-        this.scene.fog?.color.set(0x86d8ff)
+        this.playerHp = this.maxHp
+        this.playerTp = this.maxTp
+        this.events.onMission?.({
+          active: false,
+          title: 'Pioneer 2 - Hunter\'s Guild',
+          objective: 'Mission complete. Use telepipe for another run.',
+          job: 'HUmar',
+        })
+        this.events.onHint?.('Returned to Pioneer 2.')
+        this.scene.background = new Color('#88bde6')
+        this.scene.fog?.color.set(0x88bde6)
+      } else {
+        const prev = this.targetEnemyId
+        const next = prev ? null : (this.nearestEnemy(14)?.id ?? null)
+        if (!prev && next) gameAudio.playSfx('lock_on')
+        this.targetEnemyId = next
       }
     }
 
-    // mission abilities
-    this.cd2 = Math.max(0, this.cd2 - dt)
-    if (this.mode === 'mission') {
-      if (this.consumeAnyPressed(['Digit1', 'Numpad1'])) this.fireArrow({ damage: 10, speed: 18, color: 0xfbbf24 })
-      if (this.consumeAnyPressed(['Digit2', 'Numpad2']) && this.cd2 <= 0) {
-        this.cd2 = 2.5
-        this.fireArrow({ damage: 24, speed: 23, color: 0xfb7185 })
-      }
-      if (this.consumeAnyPressed(['Digit3', 'Numpad3']) && this.pickupCharges > 0) {
-        this.pickupCharges -= 1
-        if (this.playerHp < 70) this.playerHp = Math.min(100, this.playerHp + 35)
-        else this.fireArrow({ damage: 16, speed: 20, color: 0x34d399 })
-      }
+    // PSO style action palette
+    if (this.mode === 'forest1') {
+      if (this.consumeAnyPressed(['Digit1', 'Numpad1'])) this.normalAttack()
+      if (this.consumeAnyPressed(['Digit2', 'Numpad2'])) this.heavyAttack()
+      if (this.consumeAnyPressed(['Digit3', 'Numpad3'])) this.castTechnique()
     }
 
     // vertical grounding
@@ -233,6 +387,15 @@ export class Engine {
       this.player.position.y = groundY
       this.playerVel.y = Math.max(0, this.playerVel.y)
       if (this.input.consumePressed('Space')) this.playerVel.y = 5
+      if (hasMove) {
+        this.footstepT -= dt
+        if (this.footstepT <= 0) {
+          this.footstepT = this.input.isDown('ShiftLeft') ? 0.26 : 0.32
+          gameAudio.playFootstepVariant(this.footstepIdx++)
+        }
+      } else {
+        this.footstepT = 0
+      }
     } else {
       this.playerVel.y -= 14 * dt
     }
@@ -254,13 +417,44 @@ export class Engine {
     this.playerVel.z = move.z * speed
     this.player.position.addScaledVector(this.playerVel, dt)
 
-    if (this.mode === 'mission') {
+    if (this.mode === 'forest1') {
       const minX = this.missionOrigin.x - 18
       const maxX = this.missionOrigin.x + 18
       const minZ = this.missionOrigin.z - 18
       const maxZ = this.missionOrigin.z + 18
       this.player.position.x = Math.max(minX, Math.min(maxX, this.player.position.x))
       this.player.position.z = Math.max(minZ, Math.min(maxZ, this.player.position.z))
+    }
+
+    if (this.mode === 'forest1') {
+      for (const e of this.missionEnemies) {
+        e.atkCd = Math.max(0, e.atkCd - dt)
+        const toPlayer = this.tmp.copy(this.player.position).sub(e.obj.position)
+        toPlayer.y = 0
+        const dist = toPlayer.length()
+        const speedEnemy = this.missionWave === 2 ? 2.2 : 1.8
+        if (dist > 0.001) {
+          toPlayer.normalize()
+          if (dist > 1.3) e.obj.position.addScaledVector(toPlayer, speedEnemy * dt)
+          e.obj.lookAt(this.player.position.x, e.obj.position.y, this.player.position.z)
+        }
+        e.obj.position.y = this.world.heightAt(e.obj.position.x, e.obj.position.z)
+        if (dist < 1.35 && e.atkCd <= 0) {
+          e.atkCd = 1.15
+          this.playerHp = Math.max(0, this.playerHp - (this.missionWave === 2 ? 11 : 8))
+          gameAudio.playSfx('player_hurt')
+        }
+      }
+      if (this.playerHp <= 0) {
+        this.playerHp = this.maxHp
+        this.playerTp = this.maxTp
+        this.player.position.set(
+          this.missionOrigin.x,
+          this.world.heightAt(this.missionOrigin.x, this.missionOrigin.z - 6.5),
+          this.missionOrigin.z - 6.5,
+        )
+        this.events.onHint?.('You were incapacitated and revived at the Forest 1 drop point.')
+      }
     }
 
     // arrows
@@ -283,12 +477,9 @@ export class Engine {
       for (const e of this.missionEnemies) {
         const d = this.tmp.copy(e.obj.position).sub((a.mesh as any).position)
         if (d.length() < 0.9) {
-          e.hp -= a.damage
+          gameAudio.playSfx('melee_impact')
           this.cleanupArrow(a)
-          if (e.hp <= 0) {
-            this.world.root.remove(e.obj)
-            this.missionEnemies = this.missionEnemies.filter((x) => x.id !== e.id)
-          }
+          this.applyEnemyDamage(e.id, a.damage)
           break
         }
       }
@@ -296,6 +487,8 @@ export class Engine {
 
     // camera
     const desiredTarget = this.tmp2.copy(this.player.position).add(new Vector3(0, 1.1, 0))
+    const lock = this.getTargetEnemy()
+    if (lock) desiredTarget.lerp(lock.obj.position.clone().add(new Vector3(0, 0.7, 0)), 0.38)
     const offset = new Vector3(
       Math.sin(this.camYaw) * Math.cos(this.camPitch),
       Math.sin(this.camPitch),
@@ -309,58 +502,82 @@ export class Engine {
     if (this.lastHudT > 0.1) {
       this.lastHudT = 0
       this.events.onCombatHud?.({
-        job: this.mode === 'mission' ? 'Archer' : 'Explorer',
+        job: 'HUmar',
         hp: this.playerHp,
-        charges3: this.pickupCharges,
-        cd2: this.cd2,
-        enemiesRemaining: this.mode === 'mission' ? this.missionEnemies.length : 0,
+        maxHp: this.maxHp,
+        tp: this.playerTp,
+        maxTp: this.maxTp,
+        comboStep: this.comboStep,
+        lockOn: !!this.targetEnemyId,
+        cdHeavy: this.cdHeavy,
+        cdTech: this.cdTech,
+        enemiesRemaining: this.mode === 'forest1' ? this.missionEnemies.length : 0,
+        wave: this.mode === 'forest1' ? Math.max(1, this.missionWave) : 0,
         physicsReady: !!this.physics,
       })
+    }
+
+    this.lastStateT += dt
+    if (this.lastStateT > 0.2) {
+      this.lastStateT = 0
+      this.updateGameState()
     }
   }
 
   private enterMission() {
-    this.mode = 'mission'
-    const startZ = this.missionOrigin.z - 6
+    gameAudio.playSfx('teleport')
+    gameAudio.setZoneMusic('forest1')
+    this.mode = 'forest1'
+    this.missionWave = 1
+    this.targetEnemyId = null
+    const startZ = this.missionOrigin.z - 6.5
     const startY = this.world.heightAt(this.missionOrigin.x, startZ)
     this.player.position.set(this.missionOrigin.x, startY, startZ)
     this.playerVel.set(0, 0, 0)
-    this.playerHp = 100
-    this.pickupCharges = 1
-    this.cd2 = 0
-    this.spawnMissionArena()
+    this.playerHp = this.maxHp
+    this.playerTp = this.maxTp
+    this.comboStep = 0
+    this.cdHeavy = 0
+    this.cdTech = 0
+    this.spawnMissionWave(1)
     this.events.onMission?.({
       active: true,
-      title: 'Hedge Mission',
-      objective: 'Defeat all hedge creatures.',
-      job: 'Archer',
+      title: 'Forest 1',
+      objective: 'Wave 1: Defeat the Boomas ahead.',
+      job: 'HUmar',
     })
-    this.events.onHint?.('Mission: Use 1/2/3 to shoot • RMB drag camera')
+    this.events.onHint?.('Forest 1 deployed. Use 1 normal combo, 2 heavy, 3 technique, E to lock target.')
 
-    // Zone mood shift (cooler, darker, heavier fog)
-    this.scene.fog?.color.set(0x2dd4bf)
-    this.scene.background = new Color(0x0b1020)
+    this.scene.fog?.color.set(0x3f6f57)
+    this.scene.background = new Color(0x162b1f)
   }
 
-  private spawnMissionArena() {
+  private spawnMissionWave(wave: 1 | 2) {
     for (const e of this.missionEnemies) this.world.root.remove(e.obj)
     this.missionEnemies = []
-    for (let i = 0; i < 6; i++) {
-      const ex = this.missionOrigin.x + (Math.random() - 0.5) * 10
-      const ez = this.missionOrigin.z + (Math.random() - 0.5) * 6
+    const count = wave === 1 ? 5 : 7
+    const hp = wave === 1 ? 48 : 64
+    for (let i = 0; i < count; i++) {
+      const ex = this.missionOrigin.x + (Math.random() - 0.5) * 13
+      const ez = this.missionOrigin.z + (Math.random() - 0.5) * 10 + 1.5
       const ey = this.world.heightAt(ex, ez)
       const g = makeHedgeEnemy(100 + i * 9.13)
       g.position.set(ex, ey, ez)
       this.world.root.add(g)
-      this.missionEnemies.push({ id: `e${i}`, hp: 35, obj: g })
+      this.missionEnemies.push({ id: `e${wave}-${i}`, hp, atkCd: 0, obj: g })
     }
   }
 
   private fireArrow(opts: { damage: number; speed: number; color: number }) {
     const dir = new Vector3()
-    this.camera.getWorldDirection(dir)
-    dir.y *= 0.35
-    dir.normalize()
+    const target = this.getTargetEnemy()
+    if (target) {
+      dir.copy(target.obj.position).add(new Vector3(0, 0.6, 0)).sub(this.player.position).normalize()
+    } else {
+      this.camera.getWorldDirection(dir)
+      dir.y *= 0.35
+      dir.normalize()
+    }
     const start = this.tmp.copy(this.player.position).add(new Vector3(0, 1.2, 0)).addScaledVector(dir, 1.0)
     const v = dir.multiplyScalar(opts.speed)
 
