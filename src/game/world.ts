@@ -8,6 +8,7 @@ import {
   MathUtils,
   Mesh,
   MeshStandardMaterial,
+  MeshToonMaterial,
   Object3D,
   PlaneGeometry,
   Scene,
@@ -15,6 +16,7 @@ import {
   Vector3,
 } from 'three'
 import { makeHedgePillar, makeNpcGuide, makePortal, makeShell, makeTree } from './procModels'
+import { psoSkyBasic, psoToonVertex } from './psoMaterials'
 
 export type World = {
   root: Group
@@ -62,16 +64,19 @@ function fbm(x: number, z: number) {
 }
 
 export function createWorld(scene: Scene): World {
-  scene.background = new Color('#88bde6')
-  scene.fog = new Fog('#88bde6', 24, 115)
+  scene.background = new Color('#6a9ec4')
+  scene.fog = new Fog('#7eb8dc', 28, 128)
 
   const root = new Group()
   scene.add(root)
 
-  scene.add(new HemisphereLight(0xffffff, 0x4b5563, 0.75))
-  const sun = new DirectionalLight(0xffffff, 1.05)
-  sun.position.set(12, 16, 8)
+  scene.add(new HemisphereLight(0xc8e8ff, 0x1a2535, 0.85))
+  const sun = new DirectionalLight(0xfff4e0, 1.15)
+  sun.position.set(14, 22, 10)
   scene.add(sun)
+  const fill = new DirectionalLight(0x66ccff, 0.35)
+  fill.position.set(-20, 8, -8)
+  scene.add(fill)
 
   const heightAt = (x: number, z: number) => {
     const n = fbm((x + 1000) * 0.04, (z + 1000) * 0.04)
@@ -114,28 +119,23 @@ export function createWorld(scene: Scene): World {
     const grass = new Color().setHSL(0.32, 0.55, 0.28)
     const dirt = new Color().setHSL(0.08, 0.55, 0.22)
     const stone = new Color().setHSL(0.60, 0.08, 0.42)
+    const plazaTile = new Color().setHSL(0.55, 0.12, 0.38)
     c.copy(grass).lerp(dirt, nearCreek * 0.55)
     c.lerp(stone, Math.pow(hNorm, 2.2) * 0.35)
+    const pd = Math.hypot(v.x + 8, v.z - 6)
+    if (pd < 14) c.lerp(plazaTile, (1 - pd / 14) * 0.55)
     colors.push(c.r, c.g, c.b)
   }
   groundGeo.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3))
   groundGeo.computeVertexNormals()
-  const ground = new Mesh(
-    groundGeo,
-    new MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 }),
-  )
+  const ground = new Mesh(groundGeo, psoToonVertex())
   root.add(ground)
 
-  // Procedural sky dome
+  // Procedural sky dome (flat cel read; matches PSO remaster vibe)
   const skyGeo = new SphereGeometry(260, 32, 18)
   skyGeo.scale(-1, 1, 1)
-  const skyMat = new MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 1,
-    metalness: 0,
-    emissive: 0x7bb2df,
-    emissiveIntensity: 0.8,
-  })
+  const skyMat = psoSkyBasic()
+  skyMat.color.setHex(0x7eb8dc)
   const sky = new Mesh(skyGeo, skyMat)
   sky.position.y = 40
   root.add(sky)
@@ -148,8 +148,14 @@ export function createWorld(scene: Scene): World {
     const t = makeTree(i * 13.37)
     const tint = z > 50 ? 0.9 : 1
     t.traverse((o) => {
-      const m = (o as Mesh).material as MeshStandardMaterial | undefined
-      if (m?.color) m.color.multiplyScalar(tint)
+      const mat = (o as Mesh).material
+      if (!mat) return
+      const mats = Array.isArray(mat) ? mat : [mat]
+      for (const m of mats) {
+        if (m instanceof MeshToonMaterial || m instanceof MeshStandardMaterial) {
+          m.color.multiplyScalar(tint)
+        }
+      }
     })
     t.position.set(x, heightAt(x, z), z)
     root.add(t)

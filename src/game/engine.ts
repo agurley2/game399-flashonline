@@ -3,12 +3,9 @@ import {
   Color,
   Group,
   MathUtils,
-  Mesh,
-  MeshStandardMaterial,
   Object3D,
   PerspectiveCamera,
   Scene,
-  SphereGeometry,
   Vector3,
   WebGLRenderer,
 } from 'three'
@@ -16,7 +13,7 @@ import { Input } from './input'
 import { createWorld } from './world'
 import type { GameState } from './types'
 import { createSphereBody, initPhysicsWorld, removeBody, type PhysicsWorld } from '../physics'
-import { makeArrowMesh, makeHedgeEnemy } from './procModels'
+import { makeArrowMesh, makeHedgeEnemy, makePlayerHunter } from './procModels'
 import { createPostFX, type PostFX } from './post'
 import { gameAudio } from '../audio/gameAudio'
 
@@ -58,7 +55,7 @@ export class Engine {
   private playerYaw = 0
   private camYaw = MathUtils.degToRad(180)
   private camPitch = MathUtils.degToRad(12)
-  private camDistance = 5.0
+  private camDistance = 4.45
   private tmp = new Vector3()
   private tmp2 = new Vector3()
 
@@ -108,11 +105,11 @@ export class Engine {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio ?? 1, 2))
     this.renderer.outputColorSpace = 'srgb'
     this.renderer.toneMapping = ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.05
+    this.renderer.toneMappingExposure = 1.12
     this.host.appendChild(this.renderer.domElement)
 
     this.scene = this.world.root.parent as Scene
-    this.camera = new PerspectiveCamera(55, 1, 0.1, 500)
+    this.camera = new PerspectiveCamera(50, 1, 0.1, 500)
     this.camera.position.set(0, 3.2, 6)
 
     this.setupPlayer()
@@ -183,12 +180,8 @@ export class Engine {
 
   private setupPlayer() {
     this.player.position.copy(this.world.spawnPoint)
-    const body = new Mesh(
-      new SphereGeometry(0.32, 16, 16),
-      new MeshStandardMaterial({ color: new Color(0x60a5fa), roughness: 0.4, metalness: 0.05 }),
-    )
-    body.position.y = 0.32
-    this.player.add(body)
+    const hunter = makePlayerHunter()
+    this.player.add(hunter)
     this.world.root.add(this.player)
     this.playerYaw = Math.PI
     this.camYaw = this.playerYaw + Math.PI
@@ -266,14 +259,14 @@ export class Engine {
     this.comboStep = (this.comboStep % 3) + 1
     this.comboTimer = 0.8
     gameAudio.playSfx(this.comboStep === 1 ? 'melee_combo_a' : this.comboStep === 2 ? 'melee_combo_b' : 'melee_impact')
-    const nearest = this.nearestEnemy(3.2)
+    const nearest = this.nearestEnemy(3.55)
     const enemyId = this.targetEnemyId ?? nearest?.id
     if (!enemyId) return
     const enemy = this.missionEnemies.find((e) => e.id === enemyId)
     if (!enemy) return
     const d = this.tmp.copy(enemy.obj.position).sub(this.player.position)
     d.y = 0
-    if (d.length() > 3.2) return
+    if (d.length() > 3.55) return
     const damage = [18, 22, 28][this.comboStep - 1]
     this.applyEnemyDamage(enemy.id, damage)
   }
@@ -329,7 +322,7 @@ export class Engine {
     const move = new Vector3().addScaledVector(camRight, ix).addScaledVector(camForward, iz)
     if (move.lengthSq() > 0) move.normalize()
 
-    const speed = this.input.isDown('ShiftLeft') ? 6.0 : 3.6
+    const speed = this.input.isDown('ShiftLeft') ? 6.6 : 4.1
 
     // portal enter
     if (this.mode === 'hub' && this.input.consumePressed('KeyE')) {
@@ -363,8 +356,8 @@ export class Engine {
           job: 'HUmar',
         })
         this.events.onHint?.('Returned to Pioneer 2.')
-        this.scene.background = new Color('#88bde6')
-        this.scene.fog?.color.set(0x88bde6)
+        this.scene.background = new Color('#6a9ec4')
+        this.scene.fog?.color.set(0x7eb8dc)
       } else {
         const prev = this.targetEnemyId
         const next = prev ? null : (this.nearestEnemy(14)?.id ?? null)
@@ -486,7 +479,7 @@ export class Engine {
     }
 
     // camera
-    const desiredTarget = this.tmp2.copy(this.player.position).add(new Vector3(0, 1.1, 0))
+    const desiredTarget = this.tmp2.copy(this.player.position).add(new Vector3(0, 1.02, 0))
     const lock = this.getTargetEnemy()
     if (lock) desiredTarget.lerp(lock.obj.position.clone().add(new Vector3(0, 0.7, 0)), 0.38)
     const offset = new Vector3(

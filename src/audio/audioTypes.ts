@@ -1,0 +1,18 @@
+export type MusicZone = 'hub' | 'forest1'
+
+export type SfxKey =
+  | 'melee_combo_a'
+  | 'melee_combo_b'
+  | 'melee_impact'
+  | 'melee_heavy'
+  | 'tech_cast'
+  | 'tech_heal'
+  | 'lock_on'
+  | 'wave_complete'
+  | 'enemy_death'
+  | 'player_hurt'
+  | 'teleport'
+  | 'ui_click'
+  | 'footstep_a'
+  | 'footstep_b'
+  | 'footstep_c'

@@ -20,7 +20,7 @@ export function createPostFX(opts: {
   composer.setSize(opts.width, opts.height)
   composer.addPass(new RenderPass(opts.scene, opts.camera))
 
-  const bloom = new UnrealBloomPass(new Vector2(opts.width, opts.height), 0.7, 0.45, 0.92)
+  const bloom = new UnrealBloomPass(new Vector2(opts.width, opts.height), 0.42, 0.38, 0.94)
   composer.addPass(bloom)
 
   return {

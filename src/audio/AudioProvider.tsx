@@ -16,8 +16,10 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const unlock = useCallback(() => {
-    gameAudio.unlock()
-    setUnlocked(true)
+    void gameAudio.unlock().then(() => {
+      setUnlocked(true)
+      gameAudio.playSfx('ui_click')
+    })
   }, [])
 
   const value = useMemo(() => ({ unlocked, unlock }), [unlocked, unlock])

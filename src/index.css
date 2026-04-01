@@ -1,6 +1,20 @@
 :root {
-  --sans: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  --heading: Eurostile, Orbitron, system-ui, sans-serif;
+  --sans: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+  --heading: 'Orbitron', 'Segoe UI', sans-serif;
+  --mono: ui-monospace, monospace;
+
+  /* PSO-inspired palette */
+  --pso-bg: #050d14;
+  --pso-panel: rgba(6, 22, 38, 0.92);
+  --pso-panel-edge: rgba(0, 229, 255, 0.35);
+  --pso-cyan: #5ee7ff;
+  --pso-cyan-dim: rgba(94, 231, 255, 0.45);
+  --pso-hp: #00ff9d;
+  --pso-hp-shadow: rgba(0, 255, 157, 0.35);
+  --pso-tp: #4da6ff;
+  --pso-xp: #c4b5fd;
+  --pso-warn: #fbbf24;
+  --pso-mission: rgba(0, 40, 48, 0.88);
 }
 
 html,
@@ -14,6 +28,8 @@ body {
   margin: 0;
   overflow: hidden;
   font-family: var(--sans);
-  background: #020617;
-  color: #e2e8f0;
+  font-weight: 600;
+  background: var(--pso-bg);
+  color: #e8f7ff;
+  letter-spacing: 0.02em;
 }
