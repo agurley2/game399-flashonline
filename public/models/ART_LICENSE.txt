@@ -1,0 +1,13 @@
+Third-party 3D art (not affiliated with Sega or Phantasy Star Online).
+
+- Kenney Nature Kit, Space Kit — CC0 (public domain)
+  https://kenney.nl
+
+- Xbot.glb, Soldier.glb — three.js examples (MIT license)
+  https://threejs.org/examples/
+
+- Fox.glb — Khronos glTF Sample Models (CC0 / CC-BY per model page)
+  https://github.com/KhronosGroup/glTF-Sample-Models
+
+These assets are used as legally redistributable stand-ins for a PSO-inspired look.
+Replace with original commissioned work for a commercial PSO-like product if required.

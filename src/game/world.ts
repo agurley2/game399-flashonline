@@ -1,5 +1,6 @@
 import {
   AmbientLight,
+  AnimationMixer,
   BufferAttribute,
   CanvasTexture,
   Color,
@@ -10,6 +11,7 @@ import {
   MathUtils,
   Mesh,
   MeshBasicMaterial,
+  MeshPhongMaterial,
   MeshStandardMaterial,
   MeshToonMaterial,
   Object3D,
@@ -20,7 +22,9 @@ import {
   TorusGeometry,
   Vector3,
 } from 'three'
-import { makeHedgePillar, makeNpcGuide, makePortal, makeShell, makeTree } from './procModels'
+import { pickAnimationClip } from './animUtils'
+import type { GameAssets } from './loadGameAssets'
+import { cloneSkinnedRig } from './loadGameAssets'
 import { psoToon, psoToonVertex } from './psoMaterials'
 
 export type World = {
@@ -30,8 +34,8 @@ export type World = {
   portals: { id: string; name: string; object: Object3D }[]
   collectibles: { id: string; type: 'shell'; object: Object3D }[]
   heightAt: (x: number, z: number) => number
-  /** Pioneer 2 vs VR field — fog, sky gradient, accent lights */
   setZoneAtmosphere: (zone: 'hub' | 'forest1') => void
+  npcMixer: AnimationMixer | null
 }
 
 function makeSkyGradientTexture(top: Color, mid: Color, horizon: Color) {
@@ -87,7 +91,7 @@ function fbm(x: number, z: number) {
   return sum / norm
 }
 
-export function createWorld(scene: Scene): World {
+export function createWorld(scene: Scene, assets: GameAssets): World {
   const hubSkyTex = makeSkyGradientTexture(
     new Color(0xa8d8ff),
     new Color(0x6a9ec8),
@@ -180,7 +184,6 @@ export function createWorld(scene: Scene): World {
   const ground = new Mesh(groundGeo, psoToonVertex())
   root.add(ground)
 
-  // Pioneer 2 plaza ring — subtle sci-fi deck
   const plazaRing = new Mesh(
     new TorusGeometry(15.5, 0.12, 8, 64),
     psoToon(0x3a4a62, { emissive: 0x102030, emissiveIntensity: 0.12 }),
@@ -201,14 +204,14 @@ export function createWorld(scene: Scene): World {
     const x = (Math.random() - 0.5) * 150
     const z = (Math.random() - 0.5) * 150
     if (Math.hypot(x + 8, z - 6) < 24) continue
-    const t = makeTree(i * 13.37)
+    const t = assets.cloneTree(i * 13.37)
     const tint = z > 50 ? 0.88 : 1
     t.traverse((o) => {
       const mat = (o as Mesh).material
       if (!mat) return
       const mats = Array.isArray(mat) ? mat : [mat]
       for (const m of mats) {
-        if (m instanceof MeshToonMaterial || m instanceof MeshStandardMaterial) {
+        if (m instanceof MeshPhongMaterial || m instanceof MeshToonMaterial || m instanceof MeshStandardMaterial) {
           m.color.multiplyScalar(tint)
         }
       }
@@ -217,11 +220,23 @@ export function createWorld(scene: Scene): World {
     root.add(t)
   }
 
-  const npc = makeNpcGuide()
+  const npc = cloneSkinnedRig(assets.npc)
+  const rifle = assets.npcRifle.clone(true)
+  rifle.position.set(0.08, 0.95, -0.28)
+  rifle.rotation.y = Math.PI * 0.48
+  rifle.scale.setScalar(0.9)
+  npc.add(rifle)
   npc.position.set(-4.5, heightAt(-4.5, 5.4), 5.4)
   root.add(npc)
 
-  const portal = makePortal()
+  const idleClip = pickAnimationClip(assets.npc.clips, 'idle', 'stand', 'survey')
+  let npcMixer: AnimationMixer | null = null
+  if (idleClip) {
+    npcMixer = new AnimationMixer(npc)
+    npcMixer.clipAction(idleClip).play()
+  }
+
+  const portal = assets.portal.clone(true)
   portal.position.set(-13, heightAt(-13, 8), 8)
   root.add(portal)
 
@@ -233,8 +248,8 @@ export function createWorld(scene: Scene): World {
     [-13.5, 2.5],
     [-6.2, 0.6],
   ].forEach(([x, z], i) => {
-    const shell = makeShell(200 + i * 31.7)
-    shell.position.set(x, heightAt(x, z) + 0.18, z)
+    const shell = assets.shell.clone(true)
+    shell.position.set(x, heightAt(x, z) + 0.12, z)
     root.add(shell)
     collectibles.push({ id: `shell:${i}`, type: 'shell', object: shell })
   })
@@ -244,10 +259,10 @@ export function createWorld(scene: Scene): World {
     const x = i * 2.3
     const zFront = mz + 11
     const zBack = mz - 11
-    const h1 = makeHedgePillar(500 + i)
-    h1.position.set(x, heightAt(x, zFront) + 0.4, zFront)
-    const h2 = makeHedgePillar(700 + i)
-    h2.position.set(x, heightAt(x, zBack) + 0.4, zBack)
+    const h1 = assets.pillar.clone(true)
+    h1.position.set(x, heightAt(x, zFront) + 0.2, zFront)
+    const h2 = assets.pillar.clone(true)
+    h2.position.set(x, heightAt(x, zBack) + 0.2, zBack)
     root.add(h1, h2)
   }
 
@@ -299,5 +314,6 @@ export function createWorld(scene: Scene): World {
     collectibles,
     heightAt,
     setZoneAtmosphere,
+    npcMixer,
   }
 }

@@ -1,19 +1,25 @@
 import {
   ACESFilmicToneMapping,
+  AnimationAction,
+  AnimationMixer,
+  Color,
   Group,
   MathUtils,
+  Mesh,
+  MeshStandardMaterial,
   Object3D,
   PerspectiveCamera,
   Scene,
   Vector3,
   WebGLRenderer,
 } from 'three'
+import { pickAnimationClip } from './animUtils'
 import { Input } from './input'
-import { createWorld } from './world'
-import type { GameState } from './types'
-import { createSphereBody, initPhysicsWorld, removeBody, type PhysicsWorld } from '../physics'
-import { makeArrowMesh, makeHedgeEnemy, makePlayerHunter } from './procModels'
+import { cloneSkinnedRig, type GameAssets } from './loadGameAssets'
 import { createPostFX, type PostFX } from './post'
+import { createSphereBody, initPhysicsWorld, removeBody, type PhysicsWorld } from '../physics'
+import type { GameState } from './types'
+import { createWorld } from './world'
 import { gameAudio } from '../audio/gameAudio'
 
 export type EngineEvents = {
@@ -40,6 +46,17 @@ export type EngineEvents = {
   }) => void
 }
 
+type MissionEnemy = {
+  id: string
+  hp: number
+  atkCd: number
+  obj: Group
+  mixer: AnimationMixer
+  run?: AnimationAction
+  idle?: AnimationAction
+  moveChasing?: boolean
+}
+
 export class Engine {
   private host: HTMLElement
   private renderer: WebGLRenderer
@@ -52,8 +69,13 @@ export class Engine {
   private input = new Input()
   private lastT = 0
 
-  private world = createWorld(new Scene())
+  private assets: GameAssets
+  private world: ReturnType<typeof createWorld>
   private player = new Group()
+  private playerMixer: AnimationMixer | null = null
+  private playerIdleAction: AnimationAction | null = null
+  private playerRunAction: AnimationAction | null = null
+  private playerAnimMoving = false
   private playerVel = new Vector3()
   private playerYaw = 0
   private camYaw = MathUtils.degToRad(180)
@@ -71,7 +93,7 @@ export class Engine {
   /** Deployment drop — ahead of the return telepipe (PSO: you land in the field, not on the pipe). */
   private missionSpawnZOfs = 5.25
   private missionExitZOfs = -6.5
-  private missionEnemies: { id: string; hp: number; atkCd: number; obj: Group }[] = []
+  private missionEnemies: MissionEnemy[] = []
   private arrows: { body: any; mesh: Object3D; damage: number; ttl: number }[] = []
   private targetEnemyId: string | null = null
   private missionWave = 0
@@ -109,9 +131,12 @@ export class Engine {
     questProgress: {},
   }
 
-  constructor(host: HTMLElement, events: EngineEvents = {}) {
+  constructor(host: HTMLElement, events: EngineEvents = {}, assets: GameAssets) {
     this.host = host
     this.events = events
+    this.assets = assets
+    this.scene = new Scene()
+    this.world = createWorld(this.scene, assets)
 
     this.renderer = new WebGLRenderer({ antialias: true, alpha: false })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio ?? 1, 2))
@@ -120,7 +145,6 @@ export class Engine {
     this.renderer.toneMappingExposure = 1.12
     this.host.appendChild(this.renderer.domElement)
 
-    this.scene = this.world.root.parent as Scene
     this.camera = new PerspectiveCamera(50, 1, 0.1, 500)
     this.camera.position.set(0, 3.2, 6)
 
@@ -194,11 +218,19 @@ export class Engine {
 
   private setupPlayer() {
     this.player.position.copy(this.world.spawnPoint)
-    const hunter = makePlayerHunter()
-    this.player.add(hunter)
+    const rig = cloneSkinnedRig(this.assets.player)
+    this.player.add(rig)
     this.world.root.add(this.player)
     this.playerYaw = Math.PI
     this.camYaw = this.playerYaw + Math.PI
+
+    this.playerMixer = new AnimationMixer(rig)
+    const idleClip = pickAnimationClip(this.assets.player.clips, 'idle', 'samba', 'stand', 'survey')
+    const runClip = pickAnimationClip(this.assets.player.clips, 'run', 'walk', 'jog')
+    this.playerIdleAction = idleClip ? this.playerMixer.clipAction(idleClip) : null
+    this.playerRunAction =
+      runClip && idleClip && runClip.name !== idleClip.name ? this.playerMixer.clipAction(runClip) : this.playerIdleAction
+    this.playerIdleAction?.play()
   }
 
   private consumeAnyPressed(codes: Array<'Digit1' | 'Digit2' | 'Digit3' | 'Numpad1' | 'Numpad2' | 'Numpad3'>) {
@@ -503,6 +535,25 @@ export class Engine {
     this.playerVel.z = hasMove ? move.z * speed : 0
     this.player.position.addScaledVector(this.playerVel, dt)
 
+    this.playerMixer?.update(dt)
+    this.world.npcMixer?.update(dt)
+
+    if (
+      this.playerIdleAction &&
+      this.playerRunAction &&
+      this.playerIdleAction !== this.playerRunAction &&
+      hasMove !== this.playerAnimMoving
+    ) {
+      this.playerAnimMoving = hasMove
+      if (hasMove) {
+        this.playerIdleAction.fadeOut(0.14)
+        this.playerRunAction.reset().fadeIn(0.14).play()
+      } else {
+        this.playerRunAction.fadeOut(0.14)
+        this.playerIdleAction.reset().fadeIn(0.14).play()
+      }
+    }
+
     if (this.mode === 'forest1') {
       const minX = this.missionOrigin.x - 18
       const maxX = this.missionOrigin.x + 18
@@ -520,6 +571,19 @@ export class Engine {
         toPlayer.y = 0
         const dist = toPlayer.length()
         const speedEnemy = this.missionWave === 2 ? 2.2 : 1.8
+        const chasing = !freezeAi && dist > 1.35
+        const dualFox = e.run && e.idle && e.run.getClip().uuid !== e.idle.getClip().uuid
+        if (dualFox && chasing !== e.moveChasing) {
+          e.moveChasing = chasing
+          if (chasing) {
+            e.idle!.fadeOut(0.12)
+            e.run!.reset().fadeIn(0.12).play()
+          } else {
+            e.run!.fadeOut(0.12)
+            e.idle!.reset().fadeIn(0.12).play()
+          }
+        }
+        e.mixer.update(dt)
         if (!freezeAi) {
           if (dist > 0.001) {
             toPlayer.normalize()
@@ -671,10 +735,25 @@ export class Engine {
       const ex = this.missionOrigin.x + (Math.random() - 0.5) * 13
       const ez = this.missionOrigin.z + (Math.random() - 0.5) * 10 + 1.5
       const ey = this.world.heightAt(ex, ez)
-      const g = makeHedgeEnemy(100 + i * 9.13)
+      const g = cloneSkinnedRig(this.assets.enemy)
       g.position.set(ex, ey, ez)
+      const mixer = new AnimationMixer(g)
+      const rc = pickAnimationClip(this.assets.enemy.clips, 'run', 'walk')
+      const ic = pickAnimationClip(this.assets.enemy.clips, 'survey', 'idle')
+      const run = rc ? mixer.clipAction(rc) : undefined
+      const idle = ic ? mixer.clipAction(ic) : undefined
+      idle?.play()
       this.world.root.add(g)
-      this.missionEnemies.push({ id: `e${wave}-${i}`, hp, atkCd: 0, obj: g })
+      this.missionEnemies.push({
+        id: `e${wave}-${i}`,
+        hp,
+        atkCd: 0,
+        obj: g,
+        mixer,
+        run,
+        idle,
+        moveChasing: false,
+      })
     }
   }
 
@@ -691,9 +770,22 @@ export class Engine {
     const start = this.tmp.copy(this.player.position).add(new Vector3(0, 1.2, 0)).addScaledVector(dir, 1.0)
     const v = dir.multiplyScalar(opts.speed)
 
-    const mesh = makeArrowMesh(opts.color)
-    ;(mesh as any).position.copy(start)
-    ;(mesh as any).lookAt(start.clone().add(v))
+    const mesh = this.assets.arrow.clone(true) as Group
+    const c = new Color(opts.color)
+    mesh.traverse((o) => {
+      const m = (o as Mesh).material
+      if (!m) return
+      const mats = Array.isArray(m) ? m : [m]
+      for (const mat of mats) {
+        if ('color' in mat) (mat as MeshStandardMaterial).color.copy(c)
+        if ('emissive' in mat) {
+          ;(mat as MeshStandardMaterial).emissive.copy(c)
+          ;(mat as MeshStandardMaterial).emissiveIntensity = 0.85
+        }
+      }
+    })
+    mesh.position.copy(start)
+    mesh.lookAt(start.clone().add(v))
     this.world.root.add(mesh)
 
     if (this.physics) {
