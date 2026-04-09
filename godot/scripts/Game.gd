@@ -3,7 +3,7 @@ extends Node
 enum MissionPhase { HUB, FIELD_DEPLOY, FIELD_COMBAT, FIELD_CLEAR, FIELD_DOWN }
 
 @onready var world_root: Node3D = $"../WorldRoot"
-@onready var hud_label: Label = $"../UI/HudLabel"
+@onready var hud: Node = $"../UI/Hud"
 @onready var player: CharacterBody3D = $"../Player"
 @onready var audio: Node = $"../Audio"
 @onready var sun: DirectionalLight3D = $"../Sun"
@@ -23,6 +23,7 @@ var current_telepipe: Area3D
 var wave_mgr: Node = null
 var wave := 0
 var remaining := 0
+var waves_total := 0
 var _lock_on := false
 var _cycle_idx := -1
 var _reticle: Node3D = null
@@ -41,7 +42,7 @@ func _ready() -> void:
 	if audio and audio.has_method("prime"):
 		audio.call("prime", "hub")
 	_load_hub()
-	_update_hud()
+	call_deferred("_update_hud")
 
 func _process(delta: float) -> void:
 	_reticle_t += delta
@@ -221,6 +222,7 @@ func _bind_world() -> void:
 	wave_mgr = current_world.get_node_or_null("WaveManager")
 	wave = 0
 	remaining = 0
+	waves_total = 0
 	if wave_mgr:
 		# Connect if present; wave manager autostarts.
 		if wave_mgr.has_signal("wave_changed"):
@@ -232,6 +234,7 @@ func _bind_world() -> void:
 			var st: Dictionary = wave_mgr.call("get_status")
 			wave = int(st.get("wave", 0))
 			remaining = int(st.get("remaining", 0))
+			waves_total = int(st.get("waves_total", 0))
 
 	var spawn := current_world.get_node_or_null("Spawn") as Node3D
 	if spawn and player:
@@ -420,19 +423,6 @@ func _on_player_died() -> void:
 		wave_mgr.call("stop")
 
 func _update_hud() -> void:
-	var phase_name := ""
-	match phase:
-		MissionPhase.HUB:
-			phase_name = "hub"
-		MissionPhase.FIELD_DEPLOY:
-			phase_name = "field_deploy"
-		MissionPhase.FIELD_COMBAT:
-			phase_name = "field_combat"
-		MissionPhase.FIELD_CLEAR:
-			phase_name = "field_clear"
-		MissionPhase.FIELD_DOWN:
-			phase_name = "field_down"
-
 	var interact_prompt := ""
 	if phase == MissionPhase.HUB:
 		if _is_near_hub_telepipe():
@@ -451,30 +441,109 @@ func _update_hud() -> void:
 	else:
 		interact_prompt = "Find the telepipe (circle) to interact"
 
-	var hint := transient_hint if transient_hint != "" else interact_prompt
-
-	var lock_txt := ""
+	var prompt := transient_hint if transient_hint != "" else interact_prompt
+	var lock_on := false
+	var target_name := ""
 	if player and player.has_method("is_lock_on"):
-		lock_txt = "lock_on: %s" % ("ON" if player.call("is_lock_on") else "OFF")
+		lock_on = bool(player.call("is_lock_on"))
 		if player.has_method("get_lock_target_name") and player.call("is_lock_on"):
-			var tn: String = str(player.call("get_lock_target_name"))
-			if tn != "":
-				lock_txt += " (%s)" % tn
+			target_name = str(player.call("get_lock_target_name"))
 
-	var stats_txt := ""
+	var hp := 0
+	var max_hp := 100
+	var hurt := false
+	var cd_n := 0.0
+	var cd_h := 0.0
+	var cd_t := 0.0
+	var cd_t_max := 1.0
 	if player and player.has_method("get_hud_stats"):
 		var s: Dictionary = player.call("get_hud_stats")
-		var hp := int(s.get("hp", 0))
-		var max_hp := int(s.get("max_hp", 0))
-		var cd_n := float(s.get("cd_normal", 0.0))
-		var cd_h := float(s.get("cd_heavy", 0.0))
-		var cd_t := float(s.get("cd_tech", 0.0))
-		var wave_txt := ""
-		if phase != MissionPhase.HUB:
-			wave_txt = "wave: %d  remaining: %d" % [wave, remaining]
-		stats_txt = "hp: %d/%d\n%s\ncd n: %.2f  h: %.1f  t: %.1f" % [hp, max_hp, wave_txt, cd_n, cd_h, cd_t]
+		hp = int(s.get("hp", 0))
+		max_hp = int(s.get("max_hp", 100))
+		hurt = float(s.get("hurt", 0.0)) > 0.0
+		cd_n = float(s.get("cd_normal", 0.0))
+		cd_h = float(s.get("cd_heavy", 0.0))
+		cd_t = float(s.get("cd_tech", 0.0))
+		cd_t_max = maxf(0.001, float(s.get("cd_tech_max", 1.0)))
 
-	hud_label.text = "%s\njob: %s\nphase: %s\nobjective: %s\nmission_time: %.1fs\n%s\n%s\n%s" % [mission_title, mission_job, phase_name, mission_objective, mission_elapsed, stats_txt, lock_txt, hint]
+	var mission_active := phase != MissionPhase.HUB
+	var mission_clock := ""
+	if mission_active:
+		var mins := int(floor(mission_elapsed / 60.0))
+		var secs := int(floor(fmod(mission_elapsed, 60.0)))
+		mission_clock = "%d:%02d" % [mins, secs]
+
+	var phase_label := "LOBBY"
+	match phase:
+		MissionPhase.FIELD_DEPLOY:
+			phase_label = "DEPLOY"
+		MissionPhase.FIELD_COMBAT:
+			phase_label = "COMBAT"
+		MissionPhase.FIELD_CLEAR:
+			phase_label = "CLEAR"
+		MissionPhase.FIELD_DOWN:
+			phase_label = "DOWN"
+
+	var mission_pct := 0.0
+	if phase == MissionPhase.HUB:
+		mission_pct = 1.0
+	elif phase == MissionPhase.FIELD_CLEAR:
+		mission_pct = 1.0
+	elif waves_total > 0:
+		mission_pct = clampf(float(maxi(wave - 1, 0)) / float(waves_total), 0.0, 1.0)
+
+	var mission_text := "TELEPIPE READY"
+	if mission_active:
+		mission_text = "%s · WAVE %d/%d" % [phase_label, maxi(wave, 1), maxi(waves_total, 1)]
+
+	var palette_meta := "COMBAT READY · %s · RMB CAM" % ("LOCK-ON" if lock_on else "E TO LOCK")
+	if target_name != "":
+		palette_meta += " · %s" % target_name
+
+	var status_mode := "TARGET LOCK" if lock_on else "MANUAL AIM"
+	if phase == MissionPhase.FIELD_DOWN:
+		status_mode = "RETURNING TO PIONEER 2"
+
+	var wave_text := "HUNTERS GUILD - TELEPIPE READY"
+	if mission_active:
+		wave_text = "WAVE %d - REMAINING %d" % [maxi(wave, 1), maxi(remaining, 0)]
+		if phase == MissionPhase.FIELD_CLEAR:
+			wave_text = "MISSION CLEAR - RETURN TO TELEPIPE"
+		elif phase == MissionPhase.FIELD_DOWN:
+			wave_text = "MISSION FAILED - RETURNING"
+
+	var tech_ready := 1.0 - clampf(cd_t / cd_t_max, 0.0, 1.0)
+	var tech_text := "READY" if cd_t <= 0.05 else "%.1fs" % cd_t
+
+	if hud and hud.has_method("update_view"):
+		hud.call("update_view", {
+			"brand_ep": "EPISODE I",
+			"brand_title": "FLASH ONLINE",
+			"mission_active": mission_active,
+			"title": mission_title,
+			"objective": mission_objective,
+			"map_label": "PIONEER 2" if phase == MissionPhase.HUB else "FOREST 1",
+			"mission_clock": mission_clock,
+			"phase_label": phase_label,
+			"lock_on": lock_on,
+			"target_name": target_name,
+			"job": mission_job,
+			"level": 1,
+			"status_mode": status_mode,
+			"hp": hp,
+			"max_hp": max_hp,
+			"hurt": hurt,
+			"tech_pct": tech_ready,
+			"tech_text": tech_text,
+			"mission_pct": mission_pct,
+			"mission_text": mission_text,
+			"prompt": prompt,
+			"wave_text": wave_text,
+			"cd_normal": cd_n,
+			"cd_heavy": cd_h,
+			"cd_tech": cd_t,
+			"palette_meta": palette_meta,
+		})
 
 func _play_sfx(key: String, rate: float = 1.0, volume_db: float = 0.0) -> void:
 	if audio and audio.has_method("play_sfx"):

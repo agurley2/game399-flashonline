@@ -16,6 +16,8 @@ signal died
 @export var zoom_speed := 0.8
 @export var zoom_min := 2.15
 @export var zoom_max := 7.85
+@export var camera_pitch_min_deg := 5.0
+@export var camera_pitch_max_deg := 72.0
 @export var camera_catchup_delay := 2.8
 @export var camera_catchup_rate := 3.6
 @export var camera_key_turn_rate := 1.85
@@ -69,7 +71,7 @@ func _ready() -> void:
 	orbiting = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
 		if mb.button_index == MOUSE_BUTTON_RIGHT and mb.pressed:
@@ -91,7 +93,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		var mm := event as InputEventMouseMotion
 		cam_yaw -= mm.relative.x * mouse_sensitivity
 		cam_pitch -= mm.relative.y * mouse_sensitivity
-		cam_pitch = clampf(cam_pitch, deg_to_rad(5.0), deg_to_rad(44.0))
+		cam_pitch = clampf(cam_pitch, deg_to_rad(camera_pitch_min_deg), deg_to_rad(camera_pitch_max_deg))
 		_apply_camera_angles()
 		manual_cam_timer = camera_catchup_delay
 
@@ -144,7 +146,7 @@ func _physics_process(delta: float) -> void:
 	if Input.is_action_pressed("camera_down"):
 		cam_pitch -= camera_key_turn_rate * 0.6 * delta
 		manual_cam_timer = camera_catchup_delay
-	cam_pitch = clampf(cam_pitch, deg_to_rad(5.0), deg_to_rad(44.0))
+	cam_pitch = clampf(cam_pitch, deg_to_rad(camera_pitch_min_deg), deg_to_rad(camera_pitch_max_deg))
 	_apply_camera_angles()
 
 	var ix := Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
@@ -262,8 +264,11 @@ func get_hud_stats() -> Dictionary:
 		"dead": dead,
 		"hurt": _hurt_flash,
 		"cd_normal": _cd_normal,
+		"cd_normal_max": 1.0 / maxf(blaster_fire_rate, 0.001),
 		"cd_heavy": _cd_heavy,
+		"cd_heavy_max": heavy_cd,
 		"cd_tech": _cd_tech,
+		"cd_tech_max": tech_cd,
 	}
 
 func apply_damage(amount: int, from_position: Vector3 = Vector3.ZERO, _is_heavy: bool = false) -> void:
