@@ -1,0 +1,73 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/EnemyBasic.tscn" id="ExtResource_1"]
+[ext_resource type="Script" path="res://scripts/WaveManager.gd" id="ExtResource_2"]
+[ext_resource type="Resource" path="res://tuning/forest_waves.tres" id="ExtResource_3"]
+[ext_resource type="PackedScene" path="res://scenes/Portal.tscn" id="ExtResource_4"]
+[ext_resource type="Script" path="res://scripts/WorldZone.gd" id="ExtResource_5"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_1"]
+size = Vector3(1, 1, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1"]
+albedo_color = Color(0.2, 0.35, 0.22, 1)
+roughness = 1.0
+
+[sub_resource type="CylinderShape3D" id="CylinderShape3D_1"]
+height = 2.2
+radius = 1.2
+
+[sub_resource type="TorusMesh" id="TorusMesh_1"]
+ring_radius = 1.05
+pipe_radius = 0.07
+radial_segments = 24
+rings = 12
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_2"]
+albedo_color = Color(0.1, 0.9, 1, 1)
+emission_enabled = true
+emission = Color(0.1, 0.9, 1, 1)
+emission_energy_multiplier = 1.5
+shading_mode = 0
+
+[sub_resource type="BoxShape3D" id="BoxShape3D_1"]
+size = Vector3(1, 1, 1)
+
+[node name="root" type="Node3D" unique_id=163441840]
+script = ExtResource("ExtResource_5")
+zone = "forest1"
+
+[node name="Floor" type="MeshInstance3D" parent="." unique_id=995677000]
+mesh = SubResource("BoxMesh_1")
+material_override = SubResource("StandardMaterial3D_1")
+
+[node name="FloorBody" type="StaticBody3D" parent="."]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="FloorBody"]
+shape = SubResource("BoxShape3D_1")
+
+[node name="Spawn" type="Node3D" parent="." unique_id=19038781]
+position = Vector3(0, 0, 93.25)
+
+[node name="Telepipe" type="Area3D" parent="." unique_id=714481608]
+collision_mask = 2
+position = Vector3(0, 0, 81.5)
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Telepipe" unique_id=474005854]
+shape = SubResource("CylinderShape3D_1")
+
+[node name="Ring" type="MeshInstance3D" parent="Telepipe" unique_id=521618889]
+mesh = SubResource("TorusMesh_1")
+material_override = SubResource("StandardMaterial3D_2")
+rotation_degrees = Vector3(90, 0, 0)
+position = Vector3(0, 0.05, 0)
+
+[node name="Portal" parent="Telepipe" instance=ExtResource("ExtResource_4")]
+
+[node name="Enemies" type="Node3D" parent="."]
+
+[node name="WaveManager" type="Node" parent="."]
+script = ExtResource("ExtResource_2")
+enemy_scene = ExtResource("ExtResource_1")
+enemies_path = NodePath("../Enemies")
+wave_tuning = ExtResource("ExtResource_3")

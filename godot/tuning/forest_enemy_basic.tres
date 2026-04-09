@@ -1,0 +1,13 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/EnemyTuning.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+max_hp = 60
+move_speed = 3.0
+stop_distance = 4.2
+strafe_speed = 1.3
+fire_cd = 0.55
+damage = 6
+attack_range = 26.0

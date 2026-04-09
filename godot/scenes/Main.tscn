@@ -1,0 +1,53 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/Game.gd" id="ExtResource_1"]
+[ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="ExtResource_2"]
+[ext_resource type="Script" path="res://scripts/AudioManager.gd" id="ExtResource_3"]
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 2
+background_color = Color(0.55, 0.72, 0.92, 1)
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.55
+tonemap_mode = 2
+
+[sub_resource type="CameraAttributesPractical" id="CameraAttributesPractical_1"]
+auto_exposure_enabled = false
+exposure_multiplier = 1.0
+
+[node name="root" type="Node" unique_id=976100036]
+
+[node name="Game" type="Node" parent="." unique_id=445179831]
+script = ExtResource("ExtResource_1")
+
+[node name="WorldRoot" type="Node3D" parent="." unique_id=1110594809]
+
+[node name="Player" parent="." instance=ExtResource("ExtResource_2")]
+position = Vector3(0, 0, 2)
+
+[node name="Audio" type="Node" parent="."]
+script = ExtResource("ExtResource_3")
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=1047652399]
+
+[node name="HudLabel" type="Label" parent="UI" unique_id=1208953138]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 640.0
+offset_bottom = 140.0
+text = "booting..."
+
+[node name="Camera3D" type="Camera3D" parent="." unique_id=576596497]
+
+[node name="Sun" type="DirectionalLight3D" parent="." unique_id=637897993]
+light_energy = 1.2
+
+[node name="FillLight" type="DirectionalLight3D" parent="."]
+light_color = Color(0.533333, 0.784314, 1, 1)
+light_energy = 0.42
+rotation_degrees = Vector3(-25, 114, 0)
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+camera_attributes = SubResource("CameraAttributesPractical_1")

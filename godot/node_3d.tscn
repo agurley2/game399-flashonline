@@ -1,0 +1,10 @@
+[gd_scene format=3 uid="uid://bmjp654p0b1jx"]
+
+[sub_resource type="BoxMesh" id="BoxMesh_4xowi"]
+
+[node name="Node3D" type="Node3D" unique_id=1716575915]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1057690083]
+
+[node name="Cube" type="MeshInstance3D" parent="." unique_id=1278601841]
+mesh = SubResource("BoxMesh_4xowi")

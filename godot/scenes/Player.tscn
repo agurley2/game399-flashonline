@@ -1,0 +1,43 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/Player.gd" id="ExtResource_1"]
+[ext_resource type="PackedScene" path="res://assets/models/Soldier.glb" id="ExtResource_2"]
+
+[sub_resource type="CapsuleShape3D" id="CapsuleShape3D_1"]
+height = 1.2
+radius = 0.35
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_1"]
+radius = 0.35
+mid_height = 1.2
+
+[node name="Player" type="CharacterBody3D"]
+script = ExtResource("ExtResource_1")
+collision_layer = 2
+collision_mask = 1
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CapsuleShape3D_1")
+position = Vector3(0, 0.95, 0)
+
+[node name="Body" type="MeshInstance3D" parent="."]
+position = Vector3(0, 0.95, 0)
+mesh = SubResource("CapsuleMesh_1")
+visible = false
+
+[node name="Visual" type="Node3D" parent="."]
+position = Vector3(0, 0.02, 0)
+rotation_degrees = Vector3(0, 180, 0)
+scale = Vector3(0.72, 0.72, 0.72)
+
+[node name="Soldier" parent="Visual" instance=ExtResource("ExtResource_2")]
+
+[node name="CameraPivot" type="Node3D" parent="."]
+position = Vector3(0, 1.65, 0)
+
+[node name="SpringArm3D" type="SpringArm3D" parent="CameraPivot"]
+spring_length = 4.5
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot/SpringArm3D"]
+current = true
+near = 0.01

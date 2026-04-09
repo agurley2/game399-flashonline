@@ -1,0 +1,23 @@
+[gd_scene format=3]
+
+[sub_resource type="TorusMesh" id="TorusMesh_1"]
+ring_radius = 0.75
+pipe_radius = 0.05
+radial_segments = 24
+rings = 12
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_1"]
+shading_mode = 0
+emission_enabled = true
+emission = Color(0.2, 1, 1, 1)
+emission_energy_multiplier = 1.2
+transparency = 1
+albedo_color = Color(0.2, 1, 1, 0.35)
+
+[node name="LockReticle" type="Node3D"]
+
+[node name="Ring" type="MeshInstance3D" parent="."]
+mesh = SubResource("TorusMesh_1")
+material_override = SubResource("StandardMaterial3D_1")
+rotation_degrees = Vector3(90, 0, 0)
+

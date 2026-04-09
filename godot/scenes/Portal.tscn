@@ -1,0 +1,23 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://assets/models/gate_complex.glb" id="ExtResource_1"]
+[ext_resource type="PackedScene" path="res://assets/models/pipe_ring.glb" id="ExtResource_2"]
+[ext_resource type="PackedScene" path="res://assets/models/pipe_ringHigh.glb" id="ExtResource_3"]
+[ext_resource type="PackedScene" path="res://assets/models/pipe_straight.glb" id="ExtResource_4"]
+
+[node name="Portal" type="Node3D"]
+
+[node name="Gate" parent="." instance=ExtResource("ExtResource_1")]
+scale = Vector3(1.12, 1.12, 1.12)
+
+[node name="RingLow" parent="." instance=ExtResource("ExtResource_2")]
+position = Vector3(0, 1.35, 0)
+scale = Vector3(1.02, 1.02, 1.02)
+
+[node name="RingHigh" parent="." instance=ExtResource("ExtResource_3")]
+position = Vector3(0, 2.1, 0)
+scale = Vector3(0.94, 0.94, 0.94)
+
+[node name="Pipe" parent="." instance=ExtResource("ExtResource_4")]
+position = Vector3(0, 2.75, 0)
+scale = Vector3(0.52, 1.15, 0.52)
